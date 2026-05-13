@@ -41,13 +41,10 @@ jobs:
       - name: Keepalive (주 1회 last_run.txt 갱신 — 60일 비활성 방지)
         if: success()
         run: |
-          if [ -f last_run.txt ]; then
-            prev=$(cat last_run.txt 2>/dev/null || echo 0)
-            now=$(date +%s)
-            age=$(( now - prev ))
-          else
-            age=999999
-          fi
+          prev=$(cat last_run.txt 2>/dev/null || echo 0)
+          prev=${prev:-0}
+          now=$(date +%s)
+          age=$(( now - prev ))
           if [ "$age" -ge 604800 ]; then
             date +%s > last_run.txt
             git config user.name  "github-actions[bot]"
