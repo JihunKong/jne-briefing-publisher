@@ -1,0 +1,60 @@
+name: Publish briefing
+
+on:
+  schedule:
+    # 06:00 KST (= 21:00 UTC 전일) — 선생님 출근 전 새 브리핑 준비
+    - cron: '0 21 * * *'
+    # 13:00 KST (= 04:00 UTC) — 점심 무렵 갱신
+    - cron: '0 4 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # 60일 무활동 자동 비활성화 방지용 keepalive 커밋
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Publish briefing to gist
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NEIS_API_KEY: ${{ secrets.NEIS_API_KEY }}
+          GIST_TOKEN:   ${{ secrets.GIST_TOKEN }}
+          GIST_ID:      ${{ secrets.GIST_ID }}
+        run: python briefing_publish.py
+
+      - name: Keepalive (주 1회 last_run.txt 갱신 — 60일 비활성 방지)
+        if: success()
+        run: |
+          if [ -f last_run.txt ]; then
+            prev=$(cat last_run.txt 2>/dev/null || echo 0)
+            now=$(date +%s)
+            age=$(( now - prev ))
+          else
+            age=999999
+          fi
+          if [ "$age" -ge 604800 ]; then
+            date +%s > last_run.txt
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add last_run.txt
+            git commit -m "chore: keepalive $(date -u +%FT%TZ)"
+            git push
+          else
+            echo "keepalive skip — last update age=${age}s (<7d)"
+          fi
