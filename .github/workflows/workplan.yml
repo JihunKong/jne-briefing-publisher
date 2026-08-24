@@ -1,0 +1,31 @@
+name: 주간 업무 계획 대시보드 게시
+
+# 06:00 / 13:00 KST (= 21:00 / 04:00 UTC). 기존 브리핑과 같은 주기입니다.
+# 대시보드는 열릴 때마다 스스로 최신 자료를 다시 불러오므로,
+# 이 스케줄은 정적 스냅숏(자바스크립트가 없는 환경 대비)을 갱신하는 역할입니다.
+on:
+  schedule:
+    - cron: '0 21 * * *'
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 의존성 설치
+        run: pip install requests
+
+      - name: 대시보드 렌더링과 gist 게시
+        env:
+          WORKPLAN_API_URL: ${{ secrets.WORKPLAN_API_URL }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          WORKPLAN_GIST_ID: ${{ secrets.WORKPLAN_GIST_ID }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: python workplan_publish.py
