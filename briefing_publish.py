@@ -11,6 +11,13 @@ import requests, certifi
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+try:
+    # 주간 업무 계획 구역(같은 폴더의 workplan_section.py). 없으면 브리핑만 발행한다.
+    from workplan_section import build_section as build_workplan_section
+except Exception:
+    def build_workplan_section(*args, **kwargs):
+        return ''
+
 NOTION_API = 'https://api.notion.com/v1'
 NOTION_VERSION = '2025-09-03'
 ACADEMIC_DS_ID = os.environ.get(
@@ -310,7 +317,8 @@ def render_meals_section(meals):
     )
 
 
-def render_html(today, sections, timetable, meals, school, school_year, dept_label, generated_at):
+def render_html(today, sections, timetable, meals, school, school_year, dept_label, generated_at,
+                workplan_html=''):
     sec_t, sec_m, sec_w, sec_o = sections
     today_str = today.strftime(f'%Y년 %m월 %d일 ({WEEKDAY_KR[today.weekday()]})')
     body = (
@@ -318,6 +326,7 @@ def render_html(today, sections, timetable, meals, school, school_year, dept_lab
         section('내일', '🟡', '#f39c12', sec_m, '내일 등록된 일정이 없습니다.') +
         render_timetable_section(timetable, dept_label) +
         render_meals_section(meals) +
+        workplan_html +
         section('다음 주', '🟢', '#27ae60', sec_w, '다음 주 일정이 없습니다.') +
         section('이번 달 남은 중요 일정', '🔵', '#3498db', sec_o,
                 '이번 달 남은 중요 일정이 없습니다.')
@@ -454,9 +463,12 @@ def main():
         f'{neis_cfg["department"]} '
         f'{neis_cfg["grade"]}학년 {neis_cfg["class_nm"]}반'
     )
+    workplan_html = build_workplan_section()
+
     html_str = render_html(
         today, sections, timetable, meals,
         school, school_year, dept_label, generated_at,
+        workplan_html=workplan_html,
     )
 
     json_payload = {
