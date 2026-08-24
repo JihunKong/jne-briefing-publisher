@@ -36,6 +36,9 @@ jobs:
           NEIS_API_KEY: ${{ secrets.NEIS_API_KEY }}
           GIST_TOKEN:   ${{ secrets.GIST_TOKEN }}
           GIST_ID:      ${{ secrets.GIST_ID }}
+          # 주간 업무 계획 구역을 briefing.html 안에 함께 싣기 위한 주소.
+          # 값이 없으면 기존과 똑같이 학사일정만 발행된다.
+          WORKPLAN_API_URL: ${{ secrets.WORKPLAN_API_URL }}
         run: python briefing_publish.py
 
       - name: Keepalive (주 1회 last_run.txt 갱신 — 60일 비활성 방지)
