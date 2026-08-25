@@ -359,14 +359,17 @@ _JS = r"""
     })();
   }
 
-  window.addEventListener('DOMContentLoaded',function(){
-    /* API 호출이 실제로 성공한 뒤에야 입력·새로 고침 단추를 보여 준다.
-       프로그램이 파일을 그대로 여는 환경에서는 호출이 막힐 수 있는데,
-       그때에는 미리 그려 둔 내용과 시트 링크만 남으므로 혼선이 없다. */
+  /* API 호출이 실제로 성공한 뒤에야 입력·새로 고침 단추를 보여 준다.
+     프로그램이 파일을 그대로 여는 환경에서는 호출이 막힐 수 있는데,
+     그때에는 미리 그려 둔 내용과 시트 링크만 남으므로 혼선이 없다. */
+  function init(){
     if(!API||!window.fetch)return;
     refresh(false);
     setInterval(function(){refresh(false);},5*60*1000);
-  });
+  }
+  /* 문서를 이미 다 불러온 뒤에 이 스크립트가 실행되는 경우에도 동작해야 한다. */
+  if(document.readyState==='loading'){window.addEventListener('DOMContentLoaded',init);}
+  else{init();}
 })();
 </script>
 """
