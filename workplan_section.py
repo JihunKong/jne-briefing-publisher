@@ -29,6 +29,11 @@ import requests
 
 DAY_KO = ['월', '화', '수', '목', '금', '토~일']
 MAJOR_NAME = '주요일정'
+# 행정실과 교장·교감은 주간 탭의 부서 줄이지만, 화면에서는 카드가 아니라
+# 아래쪽 전달사항 칸에 싣는다. 입력 창에서는 다른 부서와 똑같이 고를 수 있다.
+NOTICE_DEPTS = [('행정실', '행정실 전달사항', 'nt-admin'),
+                ('교장·교감', '교장·교감 전달사항', 'nt-head')]
+NOTICE_NAMES = [x[0] for x in NOTICE_DEPTS]
 
 # 부서마다 다른 색을 주어 카드가 여러 장 놓여도 서로 구분되게 한다.
 DEPT_TONES = ['#a95a08', '#0e6f61', '#3f5fa8', '#8a3b62', '#4a6b23', '#7a4a1f']
@@ -91,7 +96,7 @@ def _dept_index(data):
     def take(week_like):
         for d in (week_like or {}).get('depts', []):
             nm = (d.get('name') or '').strip()
-            if not nm or nm == MAJOR_NAME or nm in seen:
+            if not nm or nm == MAJOR_NAME or nm in NOTICE_NAMES or nm in seen:
                 continue
             seen[nm] = {'name': nm, 'short': d.get('short') or nm}
             order.append(nm)
@@ -222,18 +227,31 @@ def _strip_inner(data):
     return ''.join(out)
 
 
-def _notice_one(title, text, cls):
-    body = _nl2br(text) if (text or '').strip() else '아직 등록된 전달사항이 없습니다.'
-    empty = '' if (text or '').strip() else ' nb-empty'
+def _notice_one(week, name, title, cls, today_iso):
+    dept = _find_dept(week, name)
+    rows = []
+    for i in range(6):
+        lines = _lines_of(dept, i)
+        if not lines:
+            continue
+        chip = 'wp-dchip is-today' if _is_today(week, i, today_iso) else 'wp-dchip'
+        label = DAY_KO[i] if i < 5 else '주말'
+        rows.append('<div class="wp-dgroup"><span class="%s">%s</span>'
+                    '<div class="wp-lines">%s</div></div>'
+                    % (chip, _esc(label),
+                       ''.join('<div>%s</div>' % _esc(x) for x in lines)))
+    body = ''.join(rows) or '<div class="nb-empty">이번 주에 등록된 전달사항이 없습니다.</div>'
     return ('<section class="nt %s"><h5>%s</h5>'
-            '<div class="nb%s">%s</div></section>' % (cls, _esc(title), empty, body))
+            '<div class="nb">%s</div></section>' % (cls, _esc(title), body))
 
 
 def _notice_block(data):
-    """행정실과 교장·교감 전달사항. 두세 줄이 넘어가면 칸 안에서만 스크롤한다."""
+    """행정실과 교장·교감 전달사항. 이번 주 내용을 싣고, 길면 칸 안에서만 스크롤한다."""
+    week = data.get('thisWeek')
+    today = data.get('todayIso', '')
     return ('<div class="wp-notice">'
-            + _notice_one('행정실 전달사항', data.get('adminNote', ''), 'nt-admin')
-            + _notice_one('교장·교감 전달사항', data.get('headNote', ''), 'nt-head')
+            + ''.join(_notice_one(week, nm, title, cls, today)
+                      for nm, title, cls in NOTICE_DEPTS)
             + '</div>')
 
 
@@ -354,16 +372,17 @@ _CSS = """
   .wp-lines{font-size:14.5px;line-height:1.55;color:#2b3542;word-break:break-word;min-width:0}
 
   /* 행정실·교장·교감 전달사항. 두세 줄이 넘으면 칸 안에서만 스크롤한다. */
-  #wpNoticeBlk{margin-top:9px}
+  #wpNoticeBlk{margin-top:7px}
   .wp-notice{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .nt{border:1px solid var(--line);border-radius:12px;padding:8px 13px 9px;background:#fbfaf7}
-  .nt h5{margin:0 0 5px;font-size:12.5px;font-weight:700;letter-spacing:.01em;color:#6d7681}
+  .nt{border:1px solid var(--line);border-radius:12px;padding:7px 13px 8px;background:#fbfaf7}
+  .nt h5{margin:0 0 4px;font-size:12.5px;font-weight:700;letter-spacing:.01em;color:#6d7681}
   .nt-head h5{color:#7a6b8e}
-  .nb{font-size:14px;line-height:1.5;color:#2b3542;max-height:63px;overflow-y:auto;
+  .nb{font-size:14px;line-height:1.5;color:#2b3542;max-height:58px;overflow-y:auto;
     word-break:break-word;scrollbar-width:thin;scrollbar-color:#cfc7b8 transparent}
   .nb::-webkit-scrollbar{width:7px}
   .nb::-webkit-scrollbar-thumb{background:#cfc7b8;border-radius:7px}
-  .nb-empty{color:#b8b1a4}
+  .nb-empty{color:#b8b1a4;font-size:13.5px}
+  .nb .wp-dgroup{padding:1px 0}
 
   /* 입력 현황은 평소에 자리를 차지하지 않고, 단추를 누를 때만 띄운다. */
   .wp-modal{display:none;position:fixed;inset:0;z-index:9998;background:rgba(19,27,36,.32);
@@ -376,9 +395,6 @@ _CSS = """
 
   .wp-panel{display:none;border-top:1px solid var(--line-2);background:#fbfaf7;padding:18px 22px 22px}
   .wp-panel.wp-open{display:block}
-  .wp-noticein{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px}
-  .wp-noticein textarea{min-height:74px}
-  .wp-hr{height:1px;background:var(--line-2);margin:0 0 16px}
   .wp-pillrow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px}
   .wp-pill{font-size:12.5px;padding:6px 14px;border-radius:20px;border:1px solid var(--line);
     background:#fff;cursor:pointer;user-select:none;transition:.14s}
@@ -416,7 +432,6 @@ _CSS = """
     .wp-strip{grid-template-columns:1fr}
     .wp-notice{grid-template-columns:1fr}
     .wp-formgrid{grid-template-columns:repeat(2,1fr)}
-    .wp-noticein{grid-template-columns:1fr}
     .wp-card{max-height:none}
     .wp-cscroll{overflow:visible}
   }
@@ -433,6 +448,8 @@ _JS = r"""
   var DATA=__DATA_JSON__;
   var TONES=["#a95a08","#0e6f61","#3f5fa8","#8a3b62","#4a6b23","#7a4a1f"];
   var MAJOR='주요일정';
+  var NOTICE=[['행정실','행정실 전달사항','nt-admin'],['교장·교감','교장·교감 전달사항','nt-head']];
+  var NOTICE_NAMES=NOTICE.map(function(x){return x[0];});
   var st={week:'next',dept:null,busy:false,pin:''};
   var DAY_KO=['월','화','수','목','금','토~일'];
 
@@ -458,12 +475,15 @@ _JS = r"""
     ((w||{}).depts||[]).forEach(function(d){if((d.name||'').trim()===name)out=d;});
     return out;
   }
-  function deptIndex(){
+  /* withNotice 가 참이면 행정실·교장·교감까지 함께 돌려준다.
+     화면의 카드에서는 빼고, 입력 창에서는 고를 수 있게 하기 위해서이다. */
+  function deptIndex(withNotice){
     var order=[],seen={};
     function take(w){
       ((w||{}).depts||[]).forEach(function(d){
         var nm=(d.name||'').trim();
         if(!nm||nm===MAJOR||seen[nm])return;
+        if(!withNotice&&NOTICE_NAMES.indexOf(nm)>=0)return;
         seen[nm]={name:nm,short:d.short||nm};order.push(nm);
       });
     }
@@ -569,17 +589,23 @@ _JS = r"""
       +'</div>';
     return true;
   }
-  function noticeOne(title,text,cls){
-    var t=(text||'').trim();
-    return '<section class="nt '+cls+'"><h5>'+esc(title)+'</h5>'
-      +'<div class="nb'+(t?'':' nb-empty')+'">'
-      +(t?nl2br(t):'아직 등록된 전달사항이 없습니다.')+'</div></section>';
+  function noticeOne(w,name,title,cls,today){
+    var dept=findDept(w,name),rows='';
+    for(var i=0;i<6;i++){
+      var ls=linesOf(dept,i);
+      if(!ls.length)continue;
+      var body='';
+      ls.forEach(function(x){body+='<div>'+esc(x)+'</div>';});
+      rows+='<div class="wp-dgroup"><span class="'+(isToday(w,i,today)?'wp-dchip is-today':'wp-dchip')+'">'
+        +esc(i<5?DAY_KO[i]:'주말')+'</span><div class="wp-lines">'+body+'</div></div>';
+    }
+    if(!rows)rows='<div class="nb-empty">이번 주에 등록된 전달사항이 없습니다.</div>';
+    return '<section class="nt '+cls+'"><h5>'+esc(title)+'</h5><div class="nb">'+rows+'</div></section>';
   }
   function noticeBlock(d){
-    return '<div class="wp-notice">'
-      +noticeOne('행정실 전달사항',d.adminNote,'nt-admin')
-      +noticeOne('교장·교감 전달사항',d.headNote,'nt-head')
-      +'</div>';
+    var w=d.thisWeek,today=d.todayIso||'',h='';
+    NOTICE.forEach(function(n){h+=noticeOne(w,n[0],n[1],n[2],today);});
+    return '<div class="wp-notice">'+h+'</div>';
   }
   function renderAll(){
     var d=DATA,today=d.todayIso||'';
@@ -648,6 +674,8 @@ _JS = r"""
     var p=byId('wpPanel'); if(!p)return;
     var open=p.className.indexOf('wp-open')>=0;
     p.className='wp-panel'+(open?'':' wp-open');
+    var b=byId('wpBtnInput');
+    if(b)b.textContent=open?'여기서 바로 입력':'입력창 닫기';
     if(!open){renderInput();p.scrollIntoView({behavior:'smooth',block:'nearest'});}
   }
   function renderInput(keepFocus){
@@ -656,19 +684,9 @@ _JS = r"""
     /* 적고 있던 칸을 지우지 않으려면, 입력에 초점이 있을 때에는 다시 그리지 않는다. */
     var a=document.activeElement;
     if(keepFocus&&a&&box.contains(a))return;
-    var depts=deptIndex();
+    var depts=deptIndex(true);
     if(!depts.length){box.innerHTML='<div class="wp-muted">부서 목록을 불러오지 못했습니다. 시트에서 입력해 주세요.</div>';return;}
-    var h='<div class="wp-noticein">'
-      +'<div class="wp-field"><label>행정실 전달사항</label>'
-      +'<textarea id="wpAdmin" class="wp-note-in">'+esc(DATA.adminNote||'')+'</textarea></div>'
-      +'<div class="wp-field"><label>교장·교감 전달사항</label>'
-      +'<textarea id="wpHead" class="wp-note-in">'+esc(DATA.headNote||'')+'</textarea></div>'
-      +'</div>'
-      +'<div class="wp-actions" style="margin:0 0 16px">'
-      +'<span class="wp-btn wp-primary" id="wpSaveNotice">전달사항 저장</span>'
-      +'<span class="wp-muted">전달사항은 주와 상관없이 모든 화면에 그대로 보입니다.</span>'
-      +'</div><div class="wp-hr"></div>'
-      +'<div class="wp-pillrow">'
+    var h='<div class="wp-pillrow">'
       +'<span class="wp-pill'+(st.week==='this'?' wp-sel':'')+'" data-wk="this">이번 주'+(DATA.thisWeek?' ('+esc(DATA.thisWeek.label)+')':'')+'</span>'
       +'<span class="wp-pill'+(st.week==='next'?' wp-sel':'')+'" data-wk="next">다음 주'+(DATA.nextWeek?' ('+esc(DATA.nextWeek.label)+')':'')+'</span>'
       +'</div><div class="wp-pillrow">';
@@ -700,34 +718,9 @@ _JS = r"""
       el.onclick=function(){st.week=el.getAttribute('data-wk');renderInput();};
     });
     box.querySelectorAll('[data-dept]').forEach(function(el){
-      el.onclick=function(){st.dept=deptIndex()[+el.getAttribute('data-dept')].name;renderInput();};
+      el.onclick=function(){st.dept=deptIndex(true)[+el.getAttribute('data-dept')].name;renderInput();};
     });
     var sv=byId('wpSave'); if(sv)sv.onclick=saveAll;
-    var sn=byId('wpSaveNotice'); if(sn)sn.onclick=saveNotices;
-  }
-  /* 전달사항은 주·부서와 상관없으므로 따로 저장한다. */
-  function saveNotices(){
-    if(st.busy)return;
-    var a=byId('wpAdmin'),hd=byId('wpHead');
-    var jobs=[];
-    if(a&&a.value!==(DATA.adminNote||''))jobs.push({action:'saveNotice',kind:'admin',text:a.value});
-    if(hd&&hd.value!==(DATA.headNote||''))jobs.push({action:'saveNotice',kind:'head',text:hd.value});
-    if(!jobs.length){toast('바뀐 내용이 없습니다.');return;}
-    st.busy=true;toast('전달사항을 저장하고 있습니다.');
-    var i=0,last=null,failed=null;
-    (function next(){
-      if(i>=jobs.length){
-        st.busy=false;
-        if(last){DATA=last;renderAll();}else{refresh(false,true);}
-        toast(failed?('저장에 실패했습니다: '+failed):'전달사항을 저장했습니다.');
-        return;
-      }
-      post(jobs[i]).then(function(j){
-        if(!j.ok)failed=j.error||'오류';
-        if(j.data)last=j.data;
-        i++;next();
-      }).catch(function(){failed='네트워크 오류';i++;next();});
-    })();
   }
   function post(body){
     if(DATA.pinRequired){var pe=byId('wpPin');if(pe)st.pin=pe.value;body.pin=st.pin;}
