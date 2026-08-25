@@ -30,6 +30,12 @@ UPCOMING_MAX = 14
 # 이 교시를 마치고 점심시간이다. 시간표를 오전·오후로 나누는 기준으로 쓴다.
 LUNCH_AFTER_PERIOD = 4
 
+# 학교 교표. 선생님 PC가 인터넷 그림을 받지 못하는 곳에서도 보이도록
+# 파일 안에 그림 자체를 함께 싣는다.
+SCHOOL_EMBLEM = (
+    'data:image/png;base64,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'
+)
+
 KST = datetime.timezone(datetime.timedelta(hours=9))
 
 CATEGORY_COLORS = {
@@ -288,8 +294,9 @@ body{
 .topbar::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(118deg,rgba(255,255,255,.07),transparent 44%)}
 .brand{display:flex;align-items:center;gap:15px;position:relative}
-.mark{font-family:var(--mono);font-weight:600;letter-spacing:.16em;font-size:11.5px;
-  border:1px solid rgba(255,255,255,.3);border-radius:9px;padding:8px 11px;color:#e7e2d6}
+.mark{display:flex;align-items:center;justify-content:center;background:#f6f4ef;
+  border-radius:13px;padding:8px 13px;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.mark img{display:block;height:48px;width:auto}
 .brand h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em}
 .brand p{margin:3px 0 0;font-size:12.5px;color:#a5b0bc}
 .sp{flex:1}
@@ -563,7 +570,7 @@ def build_auto_refresh(url, stamp):
         '    if(window.bindMealTabs)window.bindMealTabs();\n'
         '  }\n'
         '  function check(){\n'
-        '    if(!window.fetch||!window.DOMParser||busy())return;\n'
+        '    if(!window.fetch||!window.DOMParser||document.hidden||busy())return;\n'
         '    fetch(SRC,{cache:"no-store"}).then(function(r){return r.text();}).then(function(t){\n'
         '      var m=t.match(/name="briefing-build" content="([^"]*)"/);\n'
         '      var s=m?m[1]:"";\n'
@@ -604,7 +611,7 @@ def render_html(today, sections, timetable, meals, school, school_year, dept_lab
 <div class="shell">
   <header class="topbar">
     <div class="brand">
-      <span class="mark">JNE</span>
+      <span class="mark"><img src="{SCHOOL_EMBLEM}" alt="전남미래국제고등학교 교표"></span>
       <div>
         <h1>교무실 브리핑</h1>
         <p>{html.escape(school)} · {html.escape(school_year)}</p>

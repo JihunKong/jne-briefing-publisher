@@ -608,10 +608,29 @@ _JS = r"""
   /* API 호출이 실제로 성공한 뒤에야 입력·새로 고침 단추를 보여 준다.
      프로그램이 파일을 그대로 여는 환경에서는 호출이 막힐 수 있는데,
      그때에는 미리 그려 둔 내용과 시트 링크만 남으므로 혼선이 없다. */
+
+  /* 선생님 PC 수십 대가 같은 주기로 호출하면 Apps Script 의 하루 실행 시간을
+     금방 써 버리고, 그러면 노션으로 보내는 시간 트리거까지 밀린다.
+     그래서 주기를 넉넉히 두고, 화면이 가려져 있는 동안에는 건너뛰며,
+     PC마다 시작 시각을 조금씩 어긋나게 하여 호출이 한꺼번에 몰리지 않게 한다. */
+  var PERIOD=15*60*1000, lastAt=0;
+  function tick(){
+    if(document.hidden)return;
+    lastAt=+new Date();
+    refresh(false);
+  }
   function init(){
     if(!API||!window.fetch)return;
+    lastAt=+new Date();
     refresh(false);
-    setInterval(function(){refresh(false);},5*60*1000);
+    setTimeout(function(){
+      tick();
+      setInterval(tick,PERIOD);
+    }, Math.floor(Math.random()*3*60*1000));
+    /* 오래 가려 두었다가 다시 보게 되면 그때 한 번 최신 내용을 받아 온다. */
+    document.addEventListener('visibilitychange',function(){
+      if(!document.hidden && (+new Date()) - lastAt > PERIOD)tick();
+    });
   }
   /* 문서를 이미 다 불러온 뒤에 이 스크립트가 실행되는 경우에도 동작해야 한다. */
   if(document.readyState==='loading'){window.addEventListener('DOMContentLoaded',init);}
