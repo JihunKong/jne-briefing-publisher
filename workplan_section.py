@@ -195,7 +195,9 @@ def _card_week(label, week, dept_name, today_iso):
 
 
 def _dept_card(dept, idx, data, today_iso):
-    return ('<div class="wp-card"><h4 style="color:%s">%s</h4>%s%s</div>'
+    """부서가 많이 적어도 카드가 아래로 늘어지지 않도록 안쪽만 스크롤되게 한다."""
+    return ('<div class="wp-card"><h4 style="color:%s">%s</h4>'
+            '<div class="wp-cscroll">%s%s</div></div>'
             % (_tone(idx), _esc(dept['short']),
                _card_week('이번 주', data.get('thisWeek'), dept['name'], today_iso),
                _card_week('다음 주', data.get('nextWeek'), dept['name'], today_iso)))
@@ -238,7 +240,7 @@ _CSS = """
 <style>
   .hero{margin-top:16px}
   .hero .panel-head{background:#fbfaf7}
-  .wp-btn{display:inline-block;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:9px;
+  .wp-btn{display:inline-block;font-size:13.5px;font-weight:600;padding:7px 15px;border-radius:9px;
     border:1px solid var(--line);background:#fff;color:var(--text);text-decoration:none;cursor:pointer;
     white-space:nowrap;transition:.14s;font-family:var(--sans)}
   .wp-btn:hover{border-color:var(--ink)}
@@ -249,69 +251,75 @@ _CSS = """
     border-top:1px solid var(--line-2)}
   .wp-stat{background:#fdfcfa;padding:12px 20px 13px}
   .wp-stat-top{display:flex;align-items:baseline;gap:9px;margin-bottom:9px}
-  .wp-stat-title{font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.01em}
-  .wp-count{font-family:var(--mono);font-size:17px;font-weight:600;line-height:1;margin-left:auto}
-  .wp-count i{font-style:normal;font-size:12px;color:var(--faint)}
+  .wp-stat-title{font-size:13.5px;font-weight:700;color:var(--muted);letter-spacing:.01em}
+  .wp-count{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1;margin-left:auto}
+  .wp-count i{font-style:normal;font-size:13px;color:var(--faint)}
   .wp-count.wp-done{color:var(--teal)}
   .wp-count.wp-part{color:var(--amber)}
   .wp-chips{display:flex;flex-wrap:wrap;gap:5px}
-  .wp-chip{font-size:11.5px;padding:3px 9px;border-radius:20px;font-weight:600;white-space:nowrap}
+  .wp-chip{font-size:12.5px;padding:4px 10px;border-radius:20px;font-weight:600;white-space:nowrap}
   .wp-chip.wp-ok{background:var(--teal-bg);color:var(--teal)}
   .wp-chip.wp-bad{background:var(--amber-bg);color:var(--amber);
     border:1px dashed rgba(169,90,8,.35)}
-  .wp-muted{color:var(--faint);font-size:12.5px}
+  .wp-muted{color:var(--faint);font-size:13.5px}
 
   .wp-main{padding:16px 20px 18px}
-  .wp-empty{color:var(--faint);font-size:13px;padding:14px 2px}
-  .wp-sub{font-size:11.5px;font-weight:700;color:var(--muted);letter-spacing:.01em;
+  .wp-empty{color:var(--faint);font-size:14px;padding:14px 2px}
+  .wp-sub{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.01em;
     margin:0 0 8px;display:flex;align-items:baseline;gap:9px}
-  .wp-sub::before{content:"";width:3px;height:11px;border-radius:2px;background:var(--line);
+  .wp-sub::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--line);
     align-self:center}
-  .wp-sub em{font-style:normal;font-weight:400;font-size:11.5px;color:#b0a99c}
+  .wp-sub em{font-style:normal;font-weight:400;font-size:12.5px;color:#b0a99c}
   .wp-notes + .wp-sub,.wp-major + .wp-sub{margin-top:16px}
 
   /* 주요일정: 맨 앞 한 칸이 주 이름이고, 그 뒤로 요일 여섯 칸이 이어진다. */
   .wp-major{display:grid;grid-template-columns:112px repeat(6,1fr);gap:6px}
   .wp-rowhead{display:flex;flex-direction:column;justify-content:center;gap:3px;
     padding:7px 10px;border-radius:10px;background:var(--ink);color:#f1eee7}
-  .wp-rowhead b{font-size:13px;font-weight:700;letter-spacing:-.01em}
-  .wp-rowhead span{font-family:var(--mono);font-size:9.5px;color:#a5b0bc;letter-spacing:.02em}
-  .wp-mcell{border:1px solid var(--line);border-radius:10px;padding:7px 9px;background:#fcfbf9;
-    min-height:52px}
+  .wp-rowhead b{font-size:14.5px;font-weight:700;letter-spacing:-.01em}
+  .wp-rowhead span{font-family:var(--mono);font-size:11px;color:#a5b0bc;letter-spacing:.02em}
+  .wp-mcell{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fcfbf9;
+    min-height:58px}
   .wp-mcell.wp-mwide{grid-column:2/-1;display:flex;align-items:center;color:var(--faint);
     font-size:12.5px}
   .wp-mcell.is-today{background:var(--today-bg);border-color:#c8dbee}
-  .wp-mday{font-family:var(--mono);font-size:9.5px;font-weight:600;color:var(--muted);
+  .wp-mday{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);
     letter-spacing:.04em}
   .wp-mcell.is-today .wp-mday{color:var(--today)}
-  .wp-mline{font-size:11.5px;line-height:1.4;margin-top:4px;color:#2b3542;word-break:break-word}
-  .wp-mnone{font-size:11.5px;color:#d3ccbf;margin-top:4px}
+  .wp-mline{font-size:13.5px;line-height:1.42;margin-top:5px;color:#2b3542;word-break:break-word}
+  .wp-mnone{font-size:13.5px;color:#d3ccbf;margin-top:5px}
 
   /* 전달·협의사항 */
   .wp-notes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
   .wp-note{background:var(--amber-bg);border:1px solid #eddcc2;border-radius:11px;
-    padding:9px 12px;font-size:12.5px;line-height:1.55}
-  .wp-note b{display:block;margin-bottom:3px;color:var(--amber);font-size:11.5px;letter-spacing:.02em}
+    padding:10px 13px;font-size:14px;line-height:1.55}
+  .wp-note b{display:block;margin-bottom:3px;color:var(--amber);font-size:12.5px;letter-spacing:.02em}
 
   /* 부서별 계획: 부서 한 곳이 카드 한 장이고, 그 안에 두 주가 나란히 들어간다.
      열 수를 고정하지 않고 카드가 읽히는 최소 너비로 정해야, 넓은 화면에서 부서 넷이
      한 줄에 그대로 들어가고 좁아질 때에만 줄이 나뉜다. */
-  .wp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(288px,1fr));
+  .wp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
     gap:12px;align-items:stretch}
   .wp-card{border:1px solid var(--line);border-radius:12px;padding:11px 13px 12px;background:#fff;
-    display:flex;flex-direction:column;min-width:0}
-  .wp-card h4{margin:0 0 8px;font-size:12.5px;font-weight:700;letter-spacing:-.01em}
-  .wp-cwk{display:grid;grid-template-columns:46px 1fr;gap:9px;padding:8px 0;
+    display:flex;flex-direction:column;min-width:0;min-height:170px;max-height:320px}
+  .wp-card h4{margin:0 0 8px;font-size:14px;font-weight:700;letter-spacing:-.01em;flex:none}
+  /* 많이 적은 부서가 있어도 화면이 아래로 늘어지지 않도록 안쪽만 스크롤한다. */
+  .wp-cscroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:6px;
+    scrollbar-width:thin;scrollbar-color:#cfc7b8 transparent}
+  .wp-cscroll::-webkit-scrollbar{width:8px}
+  .wp-cscroll::-webkit-scrollbar-thumb{background:#cfc7b8;border-radius:8px}
+  .wp-cscroll::-webkit-scrollbar-track{background:transparent}
+  .wp-cwk{display:grid;grid-template-columns:52px 1fr;gap:9px;padding:8px 0;
     border-top:1px dotted var(--line)}
   .wp-cwk:first-of-type{border-top:0;padding-top:0}
-  .wp-clabel{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--faint);
+  .wp-clabel{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--faint);
     letter-spacing:.02em;padding-top:2px}
   .wp-cbody{min-width:0}
-  .wp-cnone{font-size:12px;color:#c9c2b5}
-  .wp-dgroup{display:grid;grid-template-columns:30px 1fr;gap:7px;padding:2px 0}
-  .wp-dchip{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--muted);padding-top:2px}
+  .wp-cnone{font-size:13px;color:#c2bbad}
+  .wp-dgroup{display:grid;grid-template-columns:34px 1fr;gap:8px;padding:2px 0}
+  .wp-dchip{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--muted);padding-top:2px}
   .wp-dchip.is-today{color:var(--today)}
-  .wp-lines{font-size:12.5px;line-height:1.55;color:#2b3542;word-break:break-word;min-width:0}
+  .wp-lines{font-size:14.5px;line-height:1.55;color:#2b3542;word-break:break-word;min-width:0}
 
   .wp-panel{display:none;border-top:1px solid var(--line-2);background:#fbfaf7;padding:18px 22px 22px}
   .wp-panel.wp-open{display:block}
@@ -329,7 +337,7 @@ _CSS = """
   .wp-field textarea:focus,.wp-note-in:focus{outline:0;border-color:var(--ink);
     box-shadow:0 0 0 3px rgba(19,27,36,.06)}
   .wp-actions{display:flex;align-items:center;gap:12px;margin-top:12px}
-  .wp-foot{padding:10px 22px 14px;font-family:var(--mono);font-size:10.5px;color:var(--faint);
+  .wp-foot{padding:10px 22px 14px;font-family:var(--mono);font-size:11.5px;color:var(--faint);
     border-top:1px solid var(--line-2);letter-spacing:.03em}
 
   .wp-toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:var(--ink);
@@ -351,6 +359,8 @@ _CSS = """
   @media (max-width:760px){
     .wp-strip{grid-template-columns:1fr}
     .wp-formgrid{grid-template-columns:repeat(2,1fr)}
+    .wp-card{max-height:none}
+    .wp-cscroll{overflow:visible}
   }
 </style>
 """
@@ -468,8 +478,9 @@ _JS = r"""
     var cards='';
     depts.forEach(function(dp,i){
       cards+='<div class="wp-card"><h4 style="color:'+tone(i)+'">'+esc(dp.short)+'</h4>'
+        +'<div class="wp-cscroll">'
         +cardWeek('이번 주',d.thisWeek,dp.name,today)
-        +cardWeek('다음 주',d.nextWeek,dp.name,today)+'</div>';
+        +cardWeek('다음 주',d.nextWeek,dp.name,today)+'</div></div>';
     });
     return '<div class="wp-sub">부서별 계획 <em>부서마다 이번 주와 다음 주를 함께 봅니다</em></div>'
       +'<div class="wp-cards">'+cards+'</div>';
