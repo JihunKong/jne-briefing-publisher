@@ -23,6 +23,10 @@ NOTION_VERSION = '2025-09-03'
 ACADEMIC_DS_ID = os.environ.get(
     'NOTION_DS_ID', '345e02e6-3ad9-819a-9e7d-000b18947124')
 FETCH_LOOKAHEAD_DAYS = 90
+# 달이 바뀔 무렵에 '이번 달 남은 일정'이 비어 버리는 문제가 있어,
+# 달 경계와 상관없이 앞으로 이만큼의 기간에 있는 주요 일정을 모아 보여 준다.
+UPCOMING_DAYS = 45
+UPCOMING_MAX = 14
 # 이 교시를 마치고 점심시간이다. 시간표를 오전·오후로 나누는 기준으로 쓴다.
 LUNCH_AFTER_PERIOD = 4
 
@@ -224,7 +228,7 @@ def event_covers(ev, day_iso):
     return bool(s) and s <= day_iso <= e
 
 
-def classify(events, today, tomorrow, week_start, week_end, month_end):
+def classify(events, today, tomorrow, week_start, week_end, upcoming_end):
     today_s, tomorrow_s = today.isoformat(), tomorrow.isoformat()
     sec_t, sec_m, sec_w, sec_o = [], [], [], []
     seen_t, seen_m, seen_w, seen_o = set(), set(), set(), set()
@@ -244,7 +248,7 @@ def classify(events, today, tomorrow, week_start, week_end, month_end):
             if k(ev) not in seen_w:
                 sec_w.append(ev); seen_w.add(k(ev))
         if ev.get('category') in IMPORTANT_CATEGORIES:
-            if not (e_d < today or s_d > month_end):
+            if not (e_d < today or s_d > upcoming_end):
                 if k(ev) not in seen_o:
                     sec_o.append(ev); seen_o.add(k(ev))
     return sec_t, sec_m, sec_w, sec_o
@@ -343,7 +347,11 @@ body{
 .mpane li::marker{color:var(--amber)}
 .mnote{margin-top:auto;padding-top:12px;font-size:11.5px;color:var(--faint)}
 
-/* 이번 달 남은 일정 */
+/* 다가오는 주요 일정 */
+.mlist{max-height:268px;overflow-y:auto;padding-right:4px;min-height:0}
+.mlist::-webkit-scrollbar{width:6px}
+.mlist::-webkit-scrollbar-thumb{background:#ddd7cc;border-radius:6px}
+.mmore{margin-top:auto;padding-top:12px;font-size:11.5px;color:var(--faint)}
 .mrow{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px dotted var(--line)}
 .mrow:first-child{border-top:0;padding-top:2px}
 .mrow .d{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:70px;letter-spacing:.02em}
@@ -447,11 +455,15 @@ def render_meal_panel(meals):
 
 
 def render_month_panel(events):
-    if not events:
-        rows = '<div class="empty">이번 달 남은 중요 일정이 없습니다.</div>'
+    """달 경계에 걸리지 않도록, 오늘 이후의 주요 일정을 날짜 순으로 보여 준다."""
+    events = sorted(events, key=lambda e: ((e.get('start') or '')[:10], e.get('title') or ''))
+    total = len(events)
+    shown = events[:UPCOMING_MAX]
+    if not shown:
+        rows = '<div class="empty">앞으로 45일 안에 예정된 주요 일정이 없습니다.</div>'
     else:
         out = []
-        for ev in events:
+        for ev in shown:
             cat = ev.get('category') or '기타'
             color = CATEGORY_COLORS.get(cat, '#7f8c8d')
             out.append(
@@ -461,11 +473,14 @@ def render_month_panel(events):
                 f'<span class="cat" style="background:{color}14;color:{color}">{html.escape(cat)}</span>'
                 f'</div>'
             )
-        rows = ''.join(out)
+        rows = '<div class="mlist">' + ''.join(out) + '</div>'
+        if total > len(shown):
+            rows += ('<div class="mmore">이 밖에 %d건이 더 있습니다. 노션 학사일정에서 확인해 주세요.</div>'
+                     % (total - len(shown)))
     return (
         '<article class="panel">'
-        '<div class="panel-head"><h2>이번 달 남은 일정</h2><span class="sp"></span>'
-        f'<span class="tag">{len(events)}건</span></div>'
+        '<div class="panel-head"><h2>다가오는 주요 일정</h2><span class="sp"></span>'
+        f'<span class="tag">{total}건</span></div>'
         f'<div class="panel-body">{rows}</div></article>'
     )
 
@@ -537,7 +552,7 @@ def build_auto_refresh(url, stamp):
 def render_html(today, sections, timetable, meals, school, school_year, dept_label, generated_at,
                 workplan_html=''):
     # 오늘·내일·다음 주 일정은 주간 업무 계획의 '주요일정' 행에 그대로 실리므로
-    # 중복을 없애고, 한 달 앞을 보는 목록만 보조 영역에 남긴다.
+    # 중복을 없애고, 앞으로의 주요 일정 목록만 보조 영역에 남긴다.
     sec_o = sections[3]
     dow = WEEKDAY_KR[today.weekday()]
     date_str = today.strftime('%Y. %m. %d.')
@@ -625,13 +640,10 @@ def main():
     days_until = (7 - today.weekday()) % 7 or 7
     week_start = today + datetime.timedelta(days=days_until)
     week_end = week_start + datetime.timedelta(days=6)
-    if today.month == 12:
-        month_end = datetime.date(today.year, 12, 31)
-    else:
-        month_end = datetime.date(today.year, today.month + 1, 1) - datetime.timedelta(days=1)
-    sections = classify(events, today, tomorrow, week_start, week_end, month_end)
+    upcoming_end = today + datetime.timedelta(days=UPCOMING_DAYS)
+    sections = classify(events, today, tomorrow, week_start, week_end, upcoming_end)
     print(f'  분류: 오늘 {len(sections[0])} / 내일 {len(sections[1])} / '
-          f'다음주 {len(sections[2])} / 이번달중요 {len(sections[3])}')
+          f'다음주 {len(sections[2])} / 다가오는주요 {len(sections[3])}')
 
     ymd_today = today.strftime('%Y%m%d')
     timetable = fetch_timetable(neis_cfg, neis_api_key, ymd_today)
