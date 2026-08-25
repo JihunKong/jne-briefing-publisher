@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-briefing.html 안에 '주간 업무 계획' 구역을 끼워 넣는 모듈.
+briefing.html 안에서 가장 넓은 자리를 차지하는 '주간 업무 계획' 구역.
 
 각 선생님 PC의 학사일정브리핑.exe는 gist의 briefing.html만 내려받아 표시하므로,
 주간 업무 계획도 이 파일 안에 함께 실려 있어야 선생님들이 볼 수 있습니다.
@@ -22,6 +22,13 @@ import os
 import requests
 
 DAY_KO = ['월', '화', '수', '목', '금', '토~일']
+
+# 부서마다 다른 색을 주어 하루치 목록에서 어느 부서 일인지 바로 구분되게 한다.
+DEPT_TONES = ['#a95a08', '#0e6f61', '#3f5fa8', '#8a3b62', '#4a6b23']
+
+
+def _tone(idx):
+    return DEPT_TONES[idx % len(DEPT_TONES)]
 
 
 # ------------------------------------------------------------------ 값 다듬기
@@ -50,128 +57,238 @@ def _day_label(week, i):
 def _chips(filled, missing):
     parts = []
     for n in (filled or []):
-        parts.append('<span class="wp-chip wp-ok">✓ %s</span>' % _esc(n))
+        parts.append('<span class="wp-chip wp-ok">\u2713 %s</span>' % _esc(n))
     for n in (missing or []):
-        parts.append('<span class="wp-chip wp-bad">%s 미입력</span>' % _esc(n))
+        parts.append('<span class="wp-chip wp-bad">%s</span>' % _esc(n))
     return ''.join(parts) or '<span class="wp-muted">부서 정보가 없습니다.</span>'
 
 
 def _stat(title, obj, empty_msg):
     if not obj:
-        return ('<div class="wp-stat"><div class="wp-stat-title">%s</div>'
+        return ('<div class="wp-stat"><div class="wp-stat-top">'
+                '<span class="wp-stat-title">%s</span></div>'
                 '<div class="wp-muted">%s</div></div>' % (_esc(title), _esc(empty_msg)))
     filled = obj.get('filled', [])
     missing = obj.get('missing', [])
     total = len(filled) + len(missing)
     done = len(filled)
     cls = 'wp-done' if (total and done == total) else 'wp-part'
-    return ('<div class="wp-stat"><div class="wp-stat-title">%s '
-            '<span class="wp-count %s">%d/%d 부서</span></div>'
+    return ('<div class="wp-stat"><div class="wp-stat-top">'
+            '<span class="wp-stat-title">%s</span>'
+            '<span class="wp-count %s">%d<i>/%d</i></span></div>'
             '<div class="wp-chips">%s</div></div>'
             % (_esc(title), cls, done, total, _chips(filled, missing)))
 
 
-def _week_items(week, today_iso):
-    rows = []
+MAJOR_NAME = '주요일정'
+
+
+def _is_today(week, i, today_iso):
+    dates = week.get('dates', [])
+    if not dates:
+        return False
+    if i < 5:
+        return dates[i] == today_iso
+    return today_iso in (dates[5], dates[6])
+
+
+def _lines_of(dept, i):
+    days = dept.get('days', [])
+    text = (days[i] or '').strip() if i < len(days) else ''
+    return [ln.strip() for ln in text.split('\n') if ln.strip()]
+
+
+def _major_strip(week, major, today_iso):
+    """주요일정은 달력에서 내려온 날짜별 정보이므로 요일 스트립으로 보여 준다."""
+    if not any(_lines_of(major, i) for i in range(6)):
+        return ''
+    cells = []
     for i in range(6):
-        items = []
-        for dept in week.get('depts', []):
-            days = dept.get('days', [])
-            text = (days[i] or '').strip() if i < len(days) else ''
-            if not text:
-                continue
-            for line in [ln.strip() for ln in text.split('\n') if ln.strip()]:
-                items.append('<li><b>%s</b> · %s</li>' % (_esc(dept.get('short', '')), _esc(line)))
-        if not items:
+        lines = _lines_of(major, i)
+        body = (''.join('<div class="wp-mline">%s</div>' % _esc(x) for x in lines)
+                if lines else '<div class="wp-mnone">—</div>')
+        cls = 'wp-mcell is-today' if _is_today(week, i, today_iso) else 'wp-mcell'
+        cells.append('<div class="%s"><div class="wp-mday">%s</div>%s</div>'
+                     % (cls, _esc(_day_label(week, i)), body))
+    return ('<div class="wp-sub">주요일정</div>'
+            '<div class="wp-major">%s</div>' % ''.join(cells))
+
+
+def _dept_card(week, dept, idx, today_iso):
+    """부서가 한 주치를 한 칸에 몰아 적는 경우가 많아, 요일이 아니라 부서로 묶는다."""
+    groups = []
+    for i in range(6):
+        lines = _lines_of(dept, i)
+        if not lines:
             continue
-        dates = week.get('dates', [])
-        is_today = ((i < 5 and dates[i] == today_iso)
-                    or (i == 5 and today_iso in (dates[5], dates[6])))
-        is_past = i < 5 and dates[i] < today_iso and not is_today
-        cls = 'wp-day' + (' wp-today' if is_today else '') + (' wp-past' if is_past else '')
-        badge = '<span class="wp-today-badge">오늘</span>' if is_today else ''
-        rows.append('<div class="%s"><div class="wp-day-name">%s%s</div><ul>%s</ul></div>'
-                    % (cls, _esc(_day_label(week, i)), badge, ''.join(items)))
-    if not rows:
-        return '<div class="wp-muted">아직 입력된 내용이 없습니다.</div>'
-    return ''.join(rows)
+        chip = 'wp-dchip is-today' if _is_today(week, i, today_iso) else 'wp-dchip'
+        label = DAY_KO[i] if i < 5 else '주말'
+        groups.append('<div class="wp-dgroup"><span class="%s">%s</span>'
+                      '<div class="wp-lines">%s</div></div>'
+                      % (chip, _esc(label),
+                         ''.join('<div>%s</div>' % _esc(x) for x in lines)))
+    if not groups:
+        return ''
+    return ('<div class="wp-card"><h4 style="color:%s">%s</h4>%s</div>'
+            % (_tone(idx), _esc(dept.get('short', '')), ''.join(groups)))
 
 
-def _week_block(title, week, today_iso):
+def _week_days(week, today_iso):
+    depts = week.get('depts', [])
+    major = None
+    others = []
+    for i, d in enumerate(depts):
+        if (d.get('name') or '').strip() == MAJOR_NAME:
+            major = d
+        else:
+            others.append((i, d))
+    parts = []
+    if major:
+        parts.append(_major_strip(week, major, today_iso))
+    cards = [c for c in (_dept_card(week, d, i, today_iso) for i, d in others) if c]
+    if cards:
+        parts.append('<div class="wp-sub">부서별 계획</div>'
+                     '<div class="wp-cards">%s</div>' % ''.join(cards))
+    if not parts:
+        return '<div class="wp-empty">아직 입력된 내용이 없습니다.</div>'
+    return ''.join(parts)
+
+
+def _week_col(title, week, today_iso):
     if not week:
-        return ('<div class="wp-block"><div class="wp-block-head">%s</div>'
-                '<div class="wp-muted">아직 이 주의 탭이 없습니다.</div></div>' % _esc(title))
+        return ('<div class="wp-week"><div class="wp-week-head"><h3>%s</h3></div>'
+                '<div class="wp-empty">아직 이 주의 탭이 없습니다.</div></div>' % _esc(title))
     notes = ''
     if (week.get('notes') or '').strip():
-        notes = ('<div class="wp-notes"><b>📣 전달·협의사항</b><div>%s</div></div>'
+        notes = ('<div class="wp-notes"><b>전달·협의사항</b><div>%s</div></div>'
                  % _nl2br(week['notes']))
-    return ('<div class="wp-block"><div class="wp-block-head">%s '
-            '<small>%s · %s</small></div>%s%s</div>'
+    return ('<div class="wp-week"><div class="wp-week-head">'
+            '<h3>%s</h3><span class="wp-range">%s · %s</span></div>'
+            '%s%s</div>'
             % (_esc(title), _esc(week.get('label', '')), _esc(week.get('range', '')),
-               notes, _week_items(week, today_iso)))
+               notes, _week_days(week, today_iso)))
 
 
 def _ssr(data):
     today = data.get('todayIso', '')
-    out = ['<div class="wp-stats">']
-    out.append(_stat('이번 주 입력 현황', data.get('thisWeek'), '이번 주 탭이 아직 없습니다.'))
-    out.append(_stat('다음 주 입력 현황', data.get('nextWeek'), '다음 주 탭이 아직 없습니다.'))
+    strip = ['<div class="wp-strip">']
+    strip.append(_stat('이번 주 입력', data.get('thisWeek'), '이번 주 탭이 아직 없습니다.'))
+    strip.append(_stat('다음 주 입력', data.get('nextWeek'), '다음 주 탭이 아직 없습니다.'))
     for mon in data.get('months', []):
-        out.append(_stat('%s 월간 사전 계획' % mon.get('label', ''), mon, ''))
-    out.append('</div>')
-    out.append(_week_block('📌 이번 주 할 일', data.get('thisWeek'), today))
-    out.append(_week_block('⏭️ 다음 주 할 일', data.get('nextWeek'), today))
-    return ''.join(out)
+        strip.append(_stat('%s 사전 계획' % mon.get('label', ''), mon, ''))
+    strip.append('</div>')
+    weeks = ('<div class="wp-weeks">'
+             + _week_col('이번 주', data.get('thisWeek'), today)
+             + _week_col('다음 주', data.get('nextWeek'), today)
+             + '</div>')
+    return ''.join(strip) + weeks
 
 
 # ------------------------------------------------------------------ 스타일
 
 _CSS = """
 <style>
-  .wp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-bottom:14px}
-  .wp-stat{border:1px solid #e1e8ed;border-radius:10px;padding:12px 14px;background:#fafbfc}
-  .wp-stat-title{font-size:13px;font-weight:700;color:#5d6d7e;margin-bottom:8px}
-  .wp-count{font-size:11px;font-weight:700;padding:2px 8px;border-radius:9px;margin-left:4px}
-  .wp-count.wp-done{background:#d5f5e3;color:#1e8449}
-  .wp-count.wp-part{background:#fdebd0;color:#b9770e}
+  .hero{margin-top:16px}
+  .hero .panel-head{background:#fbfaf7}
+  .wp-btn{display:inline-block;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:9px;
+    border:1px solid var(--line);background:#fff;color:var(--text);text-decoration:none;cursor:pointer;
+    white-space:nowrap;transition:.14s;font-family:var(--sans)}
+  .wp-btn:hover{border-color:var(--ink)}
+  .wp-btn.wp-primary{background:var(--ink);border-color:var(--ink);color:#f6f4ef}
+  .wp-btn.wp-primary:hover{background:#000}
+
+  .wp-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line-2);
+    border-bottom:1px solid var(--line-2)}
+  .wp-stat{background:#fff;padding:12px 20px 13px}
+  .wp-stat-top{display:flex;align-items:baseline;gap:9px;margin-bottom:9px}
+  .wp-stat-title{font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.01em}
+  .wp-count{font-family:var(--mono);font-size:17px;font-weight:600;line-height:1;margin-left:auto}
+  .wp-count i{font-style:normal;font-size:12px;color:var(--faint)}
+  .wp-count.wp-done{color:var(--teal)}
+  .wp-count.wp-part{color:var(--amber)}
   .wp-chips{display:flex;flex-wrap:wrap;gap:5px}
-  .wp-chip{font-size:12px;padding:3px 9px;border-radius:9px;font-weight:600;white-space:nowrap}
-  .wp-chip.wp-ok{background:#eafaf1;color:#1e8449;border:1px solid #a9dfbf}
-  .wp-chip.wp-bad{background:#fdedec;color:#c0392b;border:1px solid #f5b7b1}
-  .wp-muted{color:#95a5a6;font-size:13px}
-  .wp-block{border:1px solid #e1e8ed;border-radius:10px;padding:12px 14px;margin-bottom:10px}
-  .wp-block-head{font-size:15px;font-weight:700;margin-bottom:8px;color:#2c3e50}
-  .wp-block-head small{font-weight:500;color:#7f8c8d;font-size:12px;margin-left:4px}
-  .wp-notes{background:#fef9e7;border:1px solid #f7dc6f;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:13px}
-  .wp-notes b{display:block;margin-bottom:3px;color:#9a7d0a}
-  .wp-day{padding:7px 0;border-top:1px dashed #ecf0f1}
-  .wp-day:first-of-type{border-top:0}
-  .wp-day-name{font-size:12px;font-weight:700;color:#7f8c8d;margin-bottom:3px}
-  .wp-day.wp-today{background:#eef2fb;border-radius:8px;padding:8px 10px;border-top:0}
-  .wp-day.wp-today .wp-day-name{color:#4054b2}
-  .wp-day.wp-past{opacity:.5}
-  .wp-today-badge{background:#667eea;color:#fff;font-size:10px;padding:1px 7px;border-radius:8px;margin-left:6px;vertical-align:middle}
-  .wp-day ul{margin:0;padding-left:18px;font-size:13.5px;line-height:1.75;color:#34495e}
-  .wp-day li b{color:#2c3e50}
-  .wp-links{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .wp-btn{display:inline-block;font-size:13px;font-weight:600;padding:7px 14px;border-radius:9px;
-          border:1px solid #d5dbe3;background:#fff;color:#34495e;text-decoration:none;cursor:pointer}
-  .wp-btn:hover{border-color:#667eea;color:#4054b2}
-  .wp-btn.wp-primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:0}
-  .wp-panel{display:none;margin-top:14px;border:1px solid #d6dbe6;border-radius:12px;padding:14px;background:#fbfcfe}
+  .wp-chip{font-size:11.5px;padding:3px 9px;border-radius:20px;font-weight:600;white-space:nowrap}
+  .wp-chip.wp-ok{background:var(--teal-bg);color:var(--teal)}
+  .wp-chip.wp-bad{background:var(--amber-bg);color:var(--amber);
+    border:1px dashed rgba(169,90,8,.35)}
+  .wp-muted{color:var(--faint);font-size:12.5px}
+
+  .wp-weeks{display:grid;grid-template-columns:1fr 1fr}
+  .wp-week{padding:15px 20px 18px;min-width:0}
+  .wp-week + .wp-week{border-left:1px solid var(--line-2);background:#fdfcfa}
+  .wp-week-head{display:flex;align-items:baseline;gap:10px;margin-bottom:11px;
+    padding-bottom:8px;border-bottom:2px solid var(--ink)}
+  .wp-week-head h3{margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em}
+  .wp-range{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto;letter-spacing:.02em}
+  .wp-empty{color:var(--faint);font-size:13px;padding:14px 2px}
+  .wp-none{font-size:12.5px;color:var(--faint)}
+
+  .wp-sub{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--faint);
+    letter-spacing:.14em;margin:0 0 7px}
+  .wp-cards + .wp-sub,.wp-major + .wp-sub{margin-top:14px}
+
+  .wp-major{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+  .wp-mcell{border:1px solid var(--line);border-radius:10px;padding:7px 8px;background:#fcfbf9;
+    min-height:50px}
+  .wp-mcell.is-today{background:var(--today-bg);border-color:#c8dbee}
+  .wp-mday{font-family:var(--mono);font-size:9.5px;font-weight:600;color:var(--muted);
+    letter-spacing:.04em}
+  .wp-mcell.is-today .wp-mday{color:var(--today)}
+  .wp-mline{font-size:11.5px;line-height:1.38;margin-top:4px;color:#2b3542;word-break:break-word}
+  .wp-mnone{font-size:11.5px;color:#d3ccbf;margin-top:4px}
+
+  .wp-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
+  .wp-card{border:1px solid var(--line);border-radius:12px;padding:10px 12px 11px;background:#fff}
+  .wp-card h4{margin:0 0 7px;font-size:12px;font-weight:700;letter-spacing:-.01em}
+  .wp-dgroup{display:grid;grid-template-columns:32px 1fr;gap:8px;padding:3px 0}
+  .wp-dchip{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--muted);padding-top:2px}
+  .wp-dchip.is-today{color:var(--today)}
+  .wp-lines{font-size:12.5px;line-height:1.55;color:#2b3542;word-break:break-word;min-width:0}
+  .wp-notes{background:var(--amber-bg);border:1px solid #eddcc2;border-radius:11px;
+    padding:9px 12px;margin-bottom:11px;font-size:12.5px;line-height:1.55}
+  .wp-notes b{display:block;margin-bottom:3px;color:var(--amber);font-size:11.5px;letter-spacing:.02em}
+
+  .wp-panel{display:none;border-top:1px solid var(--line-2);background:#fbfaf7;padding:18px 22px 22px}
   .wp-panel.wp-open{display:block}
-  .wp-pillrow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-  .wp-pill{font-size:12.5px;padding:5px 12px;border-radius:14px;border:1px solid #d5dbe3;background:#fff;cursor:pointer;user-select:none}
-  .wp-pill.wp-sel{background:#667eea;border-color:#667eea;color:#fff;font-weight:600}
-  .wp-formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin:10px 0}
-  .wp-field label{display:block;font-size:11.5px;font-weight:700;color:#7f8c8d;margin-bottom:3px}
-  .wp-field textarea,.wp-note-in{width:100%;min-height:74px;border:1px solid #d5dbe3;border-radius:8px;
-          padding:7px 9px;font-family:inherit;font-size:13px;line-height:1.6;resize:vertical;color:#2c3e50}
-  .wp-field textarea:focus,.wp-note-in:focus{outline:0;border-color:#667eea}
-  .wp-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#2c3e50;color:#fff;
-          font-size:13.5px;padding:11px 20px;border-radius:11px;opacity:0;pointer-events:none;
-          transition:opacity .25s;z-index:9999;max-width:88%;text-align:center}
-  .wp-toast.wp-show{opacity:.96}
+  .wp-pillrow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px}
+  .wp-pill{font-size:12.5px;padding:6px 14px;border-radius:20px;border:1px solid var(--line);
+    background:#fff;cursor:pointer;user-select:none;transition:.14s}
+  .wp-pill:hover{border-color:var(--ink)}
+  .wp-pill.wp-sel{background:var(--ink);border-color:var(--ink);color:#f6f4ef;font-weight:600}
+  .wp-formgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:12px 0}
+  .wp-field label{display:block;font-family:var(--mono);font-size:10.5px;font-weight:600;
+    color:var(--muted);margin-bottom:4px;letter-spacing:.04em}
+  .wp-field textarea,.wp-note-in{width:100%;min-height:96px;border:1px solid var(--line);
+    border-radius:10px;padding:9px 11px;font-family:var(--sans);font-size:13px;line-height:1.6;
+    resize:vertical;color:var(--text);background:#fff}
+  .wp-field textarea:focus,.wp-note-in:focus{outline:0;border-color:var(--ink);
+    box-shadow:0 0 0 3px rgba(19,27,36,.06)}
+  .wp-actions{display:flex;align-items:center;gap:12px;margin-top:12px}
+  .wp-foot{padding:10px 22px 14px;font-family:var(--mono);font-size:10.5px;color:var(--faint);
+    border-top:1px solid var(--line-2);letter-spacing:.03em}
+
+  .wp-toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:var(--ink);
+    color:#f6f4ef;font-size:13.5px;padding:12px 22px;border-radius:12px;opacity:0;
+    pointer-events:none;transition:opacity .25s;z-index:9999;max-width:88%;text-align:center;
+    box-shadow:0 12px 34px rgba(19,27,36,.28)}
+  .wp-toast.wp-show{opacity:1}
+
+  @media (max-width:1400px){
+    .wp-strip{grid-template-columns:repeat(2,1fr)}
+    .wp-formgrid{grid-template-columns:repeat(3,1fr)}
+  }
+  @media (max-width:1100px){
+    .wp-weeks{grid-template-columns:1fr}
+    .wp-week + .wp-week{border-left:0;border-top:1px solid var(--line-2)}
+  }
+  @media (max-width:1500px){.wp-cards{grid-template-columns:1fr}}
+  @media (max-width:1100px){.wp-cards{grid-template-columns:1fr 1fr}}
+  @media (max-width:760px){
+    .wp-strip{grid-template-columns:1fr}
+    .wp-formgrid{grid-template-columns:repeat(2,1fr)}
+    .wp-cards{grid-template-columns:1fr}
+    .wp-major{grid-template-columns:repeat(3,1fr)}
+  }
 </style>
 """
 
@@ -183,6 +300,7 @@ _JS = r"""
 (function(){
   var API="__API_URL__";
   var DATA=__DATA_JSON__;
+  var TONES=["#a95a08","#0e6f61","#3f5fa8","#8a3b62","#4a6b23"];
   var st={week:'next',dept:null,busy:false,pin:''};
   var DAY_KO=['월','화','수','목','금','토~일'];
 
@@ -191,54 +309,89 @@ _JS = r"""
   function md(iso){var p=String(iso).split('-');return (+p[1])+'/'+(+p[2]);}
   function dayLabel(w,i){return i<5?DAY_KO[i]+' '+md(w.dates[i]):'토~일 '+md(w.dates[5])+'~'+md(w.dates[6]);}
   function byId(id){return document.getElementById(id);}
+  function tone(i){return TONES[i%TONES.length];}
 
   function chips(f,m){
     var h='';
-    (f||[]).forEach(function(n){h+='<span class="wp-chip wp-ok">✓ '+esc(n)+'</span>';});
-    (m||[]).forEach(function(n){h+='<span class="wp-chip wp-bad">'+esc(n)+' 미입력</span>';});
+    (f||[]).forEach(function(n){h+='<span class="wp-chip wp-ok">\u2713 '+esc(n)+'</span>';});
+    (m||[]).forEach(function(n){h+='<span class="wp-chip wp-bad">'+esc(n)+'</span>';});
     return h||'<span class="wp-muted">부서 정보가 없습니다.</span>';
   }
   function stat(title,o,emptyMsg){
-    if(!o)return '<div class="wp-stat"><div class="wp-stat-title">'+esc(title)+'</div><div class="wp-muted">'+esc(emptyMsg)+'</div></div>';
+    if(!o)return '<div class="wp-stat"><div class="wp-stat-top"><span class="wp-stat-title">'+esc(title)
+      +'</span></div><div class="wp-muted">'+esc(emptyMsg)+'</div></div>';
     var total=(o.filled||[]).length+(o.missing||[]).length,done=(o.filled||[]).length;
-    return '<div class="wp-stat"><div class="wp-stat-title">'+esc(title)+' <span class="wp-count '
-      +((total&&done===total)?'wp-done':'wp-part')+'">'+done+'/'+total+' 부서</span></div>'
+    return '<div class="wp-stat"><div class="wp-stat-top"><span class="wp-stat-title">'+esc(title)+'</span>'
+      +'<span class="wp-count '+((total&&done===total)?'wp-done':'wp-part')+'">'+done+'<i>/'+total+'</i></span></div>'
       +'<div class="wp-chips">'+chips(o.filled,o.missing)+'</div></div>';
   }
-  function weekItems(w,today){
-    var out='';
-    for(var i=0;i<6;i++){
-      var items='';
-      (w.depts||[]).forEach(function(d){
-        var t=((d.days||[])[i]||'').trim();
-        if(!t)return;
-        t.split(/\n/).forEach(function(line){
-          line=line.trim(); if(!line)return;
-          items+='<li><b>'+esc(d.short)+'</b> · '+esc(line)+'</li>';
-        });
-      });
-      if(!items)continue;
-      var isToday=(i<5&&w.dates[i]===today)||(i===5&&(today===w.dates[5]||today===w.dates[6]));
-      var isPast=i<5&&w.dates[i]<today&&!isToday;
-      out+='<div class="wp-day'+(isToday?' wp-today':'')+(isPast?' wp-past':'')+'">'
-        +'<div class="wp-day-name">'+esc(dayLabel(w,i))+(isToday?'<span class="wp-today-badge">오늘</span>':'')
-        +'</div><ul>'+items+'</ul></div>';
-    }
-    return out||'<div class="wp-muted">아직 입력된 내용이 없습니다.</div>';
+  var MAJOR='주요일정';
+  function isToday(w,i,today){
+    var d=w.dates||[];
+    if(!d.length)return false;
+    return i<5?d[i]===today:(today===d[5]||today===d[6]);
   }
-  function weekBlock(title,w,today){
-    if(!w)return '<div class="wp-block"><div class="wp-block-head">'+esc(title)+'</div><div class="wp-muted">아직 이 주의 탭이 없습니다.</div></div>';
-    var notes=(w.notes||'').trim()?'<div class="wp-notes"><b>📣 전달·협의사항</b><div>'+nl2br(w.notes)+'</div></div>':'';
-    return '<div class="wp-block"><div class="wp-block-head">'+esc(title)+' <small>'+esc(w.label)+' · '+esc(w.range)+'</small></div>'
-      +notes+weekItems(w,today)+'</div>';
+  function linesOf(dept,i){
+    var t=((dept.days||[])[i]||'').trim();
+    if(!t)return [];
+    return t.split(/\n/).map(function(x){return x.trim();}).filter(Boolean);
+  }
+  function majorStrip(w,major,today){
+    var any=false;
+    for(var i=0;i<6;i++){if(linesOf(major,i).length){any=true;break;}}
+    if(!any)return '';
+    var cells='';
+    for(var i=0;i<6;i++){
+      var ls=linesOf(major,i),body='';
+      if(ls.length){ls.forEach(function(x){body+='<div class="wp-mline">'+esc(x)+'</div>';});}
+      else{body='<div class="wp-mnone">—</div>';}
+      cells+='<div class="'+(isToday(w,i,today)?'wp-mcell is-today':'wp-mcell')+'">'
+        +'<div class="wp-mday">'+esc(dayLabel(w,i))+'</div>'+body+'</div>';
+    }
+    return '<div class="wp-sub">주요일정</div><div class="wp-major">'+cells+'</div>';
+  }
+  function deptCard(w,dept,idx,today){
+    var groups='';
+    for(var i=0;i<6;i++){
+      var ls=linesOf(dept,i);
+      if(!ls.length)continue;
+      var body='';
+      ls.forEach(function(x){body+='<div>'+esc(x)+'</div>';});
+      groups+='<div class="wp-dgroup"><span class="'+(isToday(w,i,today)?'wp-dchip is-today':'wp-dchip')+'">'
+        +esc(i<5?DAY_KO[i]:'주말')+'</span><div class="wp-lines">'+body+'</div></div>';
+    }
+    if(!groups)return '';
+    return '<div class="wp-card"><h4 style="color:'+tone(idx)+'">'+esc(dept.short)+'</h4>'+groups+'</div>';
+  }
+  function weekDays(w,today){
+    var depts=w.depts||[],major=null,others=[];
+    depts.forEach(function(d,i){
+      if((d.name||'').trim()===MAJOR){major=d;}else{others.push([i,d]);}
+    });
+    var out='';
+    if(major)out+=majorStrip(w,major,today);
+    var cards='';
+    others.forEach(function(pair){cards+=deptCard(w,pair[1],pair[0],today);});
+    if(cards)out+='<div class="wp-sub">부서별 계획</div><div class="wp-cards">'+cards+'</div>';
+    return out||'<div class="wp-empty">아직 입력된 내용이 없습니다.</div>';
+  }
+  function weekCol(title,w,today){
+    if(!w)return '<div class="wp-week"><div class="wp-week-head"><h3>'+esc(title)
+      +'</h3></div><div class="wp-empty">아직 이 주의 탭이 없습니다.</div></div>';
+    var notes=(w.notes||'').trim()
+      ?'<div class="wp-notes"><b>전달·협의사항</b><div>'+nl2br(w.notes)+'</div></div>':'';
+    return '<div class="wp-week"><div class="wp-week-head"><h3>'+esc(title)+'</h3>'
+      +'<span class="wp-range">'+esc(w.label)+' · '+esc(w.range)+'</span></div>'
+      +notes+weekDays(w,today)+'</div>';
   }
   function renderAll(){
     var d=DATA,today=d.todayIso||'';
-    var h='<div class="wp-stats">';
-    h+=stat('이번 주 입력 현황',d.thisWeek,'이번 주 탭이 아직 없습니다.');
-    h+=stat('다음 주 입력 현황',d.nextWeek,'다음 주 탭이 아직 없습니다.');
-    (d.months||[]).forEach(function(m){h+=stat(m.label+' 월간 사전 계획',m,'');});
-    h+='</div>'+weekBlock('📌 이번 주 할 일',d.thisWeek,today)+weekBlock('⏭️ 다음 주 할 일',d.nextWeek,today);
+    var h='<div class="wp-strip">';
+    h+=stat('이번 주 입력',d.thisWeek,'이번 주 탭이 아직 없습니다.');
+    h+=stat('다음 주 입력',d.nextWeek,'다음 주 탭이 아직 없습니다.');
+    (d.months||[]).forEach(function(m){h+=stat(m.label+' 사전 계획',m,'');});
+    h+='</div><div class="wp-weeks">'+weekCol('이번 주',d.thisWeek,today)
+      +weekCol('다음 주',d.nextWeek,today)+'</div>';
     var c=byId('wpContent'); if(c)c.innerHTML=h;
     var b=byId('wpCount');
     if(b&&d.nextWeek){
@@ -263,7 +416,7 @@ _JS = r"""
       if(j&&j.thisWeek!==undefined){
         DATA=j;reveal();renderAll();
         var s=byId('wpStamp');
-        if(s)s.textContent='실시간 자료 ('+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 기준)';
+        if(s)s.textContent='실시간 자료 · '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 기준';
         if(manual)toast('최신 내용으로 갱신했습니다.');
       }else if(manual){toast('갱신에 실패했습니다.');}
     }).catch(function(){if(manual)toast('네트워크 연결을 확인해 주세요.');});
@@ -280,7 +433,7 @@ _JS = r"""
     var p=byId('wpPanel'); if(!p)return;
     var open=p.className.indexOf('wp-open')>=0;
     p.className='wp-panel'+(open?'':' wp-open');
-    if(!open)renderInput();
+    if(!open){renderInput();p.scrollIntoView({behavior:'smooth',block:'nearest'});}
   }
   function renderInput(){
     var box=byId('wpPanelBody'),p=byId('wpPanel');
@@ -308,10 +461,10 @@ _JS = r"""
       h+='</div><div class="wp-field"><label>전달·협의사항 (부서 공통)</label>'
         +'<textarea class="wp-note-in" id="wpNote">'+esc(w?(w.notes||''):'')+'</textarea></div>';
       if(DATA.pinRequired){
-        h+='<div class="wp-field" style="max-width:220px"><label>입력 비밀번호</label>'
-          +'<textarea id="wpPin" style="min-height:38px">'+esc(st.pin)+'</textarea></div>';
+        h+='<div class="wp-field" style="max-width:240px;margin-top:10px"><label>입력 비밀번호</label>'
+          +'<textarea id="wpPin" style="min-height:40px">'+esc(st.pin)+'</textarea></div>';
       }
-      h+='<div class="wp-links"><span class="wp-btn wp-primary" id="wpSave">저장</span>'
+      h+='<div class="wp-actions"><span class="wp-btn wp-primary" id="wpSave">저장</span>'
         +'<span class="wp-muted">저장하면 시트에 기록되고 노션에는 10분 안에 반영됩니다.</span></div>';
     }else{
       h+='<div class="wp-muted">주와 부서를 고르면 입력 칸이 열립니다.</div>';
@@ -388,7 +541,7 @@ def _fetch(api_url, timeout):
 
 
 def build_section(api_url=None, timeout=45):
-    """briefing.html 본문에 끼워 넣을 '주간 업무 계획' 구역을 돌려준다.
+    """대시보드의 주 영역이 되는 '주간 업무 계획' 구역을 돌려준다.
 
     주소가 없거나 조회에 실패하면 빈 문자열을 돌려주므로 브리핑 발행은 그대로 진행된다.
     """
@@ -407,28 +560,29 @@ def build_section(api_url=None, timeout=45):
     total = done + len(nw.get('missing', []))
     count_label = ('다음 주 %d/%d 부서' % (done, total)) if nw else '자료 없음'
 
-    links = ['<span class="wp-btn wp-primary" id="wpBtnInput" style="display:none">✏️ 여기서 바로 입력</span>',
-             '<span class="wp-btn" id="wpBtnRefresh" style="display:none">↻ 새로 고침</span>']
+    links = ['<span class="wp-btn wp-primary" id="wpBtnInput" style="display:none">여기서 바로 입력</span>',
+             '<span class="wp-btn" id="wpBtnRefresh" style="display:none">새로 고침</span>']
     if data.get('sheetUrl'):
-        links.append('<a class="wp-btn" href="%s" target="_blank" rel="noopener">📄 시트에서 입력</a>'
+        links.append('<a class="wp-btn" href="%s" target="_blank" rel="noopener">시트</a>'
                      % _esc(data['sheetUrl']))
     if data.get('notionDbUrl'):
-        links.append('<a class="wp-btn" href="%s" target="_blank" rel="noopener">🗂️ 노션에서 보기</a>'
+        links.append('<a class="wp-btn" href="%s" target="_blank" rel="noopener">노션</a>'
                      % _esc(data['notionDbUrl']))
 
     body = (
-        '<section>'
-        '<h2 style="border-color:#764ba2;">'
-        '<span class="icon" style="background:#764ba2;">📋</span>'
-        '주간 업무 계획<span class="count" id="wpCount">%s</span></h2>'
-        '<div id="wpContent">%s</div>'
-        '<div class="wp-links">%s</div>'
+        '<section class="panel hero">'
+        '<div class="panel-head">'
+        '<h2>주간 업무 계획</h2>'
+        '<span class="sub">부서별 주간 계획 · 시트와 노션에 함께 반영됩니다</span>'
+        '<span class="sp"></span>'
+        f'<span class="tag" id="wpCount">{_esc(count_label)}</span>'
+        f'{"".join(links)}'
+        '</div>'
+        f'<div id="wpContent">{_ssr(data)}</div>'
         '<div class="wp-panel" id="wpPanel"><div id="wpPanelBody"></div></div>'
-        '<div class="wp-muted" style="margin-top:10px;font-size:11.5px" id="wpStamp">'
-        '발행 시각 기준 자료입니다. 입력은 아래 [📄 시트에서 입력]을 눌러 주세요.</div>'
+        '<div class="wp-foot" id="wpStamp">발행 시각 기준 자료입니다. 입력은 [시트]를 눌러 주세요.</div>'
         '</section>'
         '<div class="wp-toast" id="wpToast"></div>'
-        % (_esc(count_label), _ssr(data), ''.join(links))
     )
 
     script = (_JS
