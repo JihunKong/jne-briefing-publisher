@@ -251,6 +251,110 @@ def classify(events, today, tomorrow, week_start, week_end, month_end):
 
 
 # ============== HTML 렌더 =================
+PAGE_CSS = """
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --ink:#131b24; --paper:#f2efe9; --card:#ffffff;
+  --line:#e3ded4; --line-2:#efebe3;
+  --text:#1a222c; --muted:#69737f; --faint:#9aa3ad;
+  --teal:#0e6f61; --teal-bg:#e8f2f0;
+  --amber:#a95a08; --amber-bg:#fbf1e3;
+  --today:#1d4f7c; --today-bg:#eaf1f8;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(19,27,36,.04), 0 10px 28px rgba(19,27,36,.055);
+  --mono:'IBM Plex Mono', ui-monospace, Consolas, 'Courier New', monospace;
+  --sans:'Pretendard','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:var(--sans); background:var(--paper); color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(1100px 420px at 12% -12%, rgba(14,111,97,.075), transparent 62%),
+    radial-gradient(900px 380px at 90% -8%, rgba(169,90,8,.07), transparent 60%);
+  background-attachment:fixed;
+}
+.shell{max-width:1780px;margin:0 auto;padding:24px 34px 20px}
+
+/* ---- 상단 바 ---- */
+.topbar{display:flex;align-items:center;gap:22px;background:var(--ink);color:#f6f4ef;
+  border-radius:18px;padding:20px 28px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.topbar::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(118deg,rgba(255,255,255,.07),transparent 44%)}
+.brand{display:flex;align-items:center;gap:15px;position:relative}
+.mark{font-family:var(--mono);font-weight:600;letter-spacing:.16em;font-size:11.5px;
+  border:1px solid rgba(255,255,255,.3);border-radius:9px;padding:8px 11px;color:#e7e2d6}
+.brand h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em}
+.brand p{margin:3px 0 0;font-size:12.5px;color:#a5b0bc}
+.sp{flex:1}
+.daypill{text-align:right;position:relative}
+.daypill .dow{display:block;font-size:11px;color:#a5b0bc;letter-spacing:.3em;margin-bottom:2px}
+.daypill .d{font-family:var(--mono);font-size:25px;font-weight:600;letter-spacing:.02em}
+
+/* ---- 공통 패널 ---- */
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.panel-head{display:flex;align-items:center;gap:11px;padding:15px 20px;border-bottom:1px solid var(--line-2)}
+.panel-head h2{margin:0;font-size:15.5px;font-weight:700;letter-spacing:-.01em}
+.panel-head .sub{font-size:12px;color:var(--muted)}
+.tag{font-family:var(--mono);font-size:10.5px;color:var(--muted);border:1px solid var(--line);
+  border-radius:20px;padding:3px 9px;letter-spacing:.04em;white-space:nowrap}
+.panel-body{padding:16px 20px 18px;flex:1;min-height:0}
+#mealPanel{display:flex;flex-direction:column}
+.empty{color:var(--faint);font-size:13px;padding:10px 2px;line-height:1.7}
+
+/* ---- 하단 보조 영역 ---- */
+.aux{display:grid;grid-template-columns:1.5fr 1.05fr .95fr;gap:16px;margin-top:16px;align-items:stretch}
+@media (max-width:1400px){.aux{grid-template-columns:1fr 1fr}}
+@media (max-width:900px){.aux{grid-template-columns:1fr}}
+
+/* 시간표 */
+.periods{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.period{border:1px solid var(--line);border-radius:11px;padding:9px 11px;background:#fcfbf9}
+.period .num{display:block;font-family:var(--mono);font-size:10.5px;font-weight:600;
+  color:var(--teal);letter-spacing:.06em}
+.period .subj{display:block;font-size:13.5px;font-weight:500;margin-top:3px;line-height:1.35}
+.period.rest{background:var(--amber-bg);border-color:#ecdcc3}
+.period.rest .subj{color:var(--amber);font-style:italic}
+.lunch{margin:10px 0;display:flex;align-items:center;gap:11px;color:var(--amber);
+  font-size:11px;font-weight:600;letter-spacing:.1em}
+.lunch::before,.lunch::after{content:"";flex:1;height:1px;
+  background:repeating-linear-gradient(90deg,#e8dcc6 0 5px,transparent 5px 10px)}
+@media (max-width:1400px){.periods{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:520px){.periods{grid-template-columns:repeat(2,1fr)}}
+
+/* 급식 */
+.mtabs{display:flex;align-items:center;gap:6px;margin-bottom:13px}
+.mtabs .kcal{margin-left:auto}
+.mtab{font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;border:1px solid var(--line);
+  background:#fff;color:var(--muted);cursor:pointer;font-family:var(--sans);transition:.14s}
+.mtab:hover{border-color:var(--ink);color:var(--text)}
+.mtab.on{background:var(--ink);border-color:var(--ink);color:#f6f4ef}
+.kcal{font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  border:1px solid var(--line);border-radius:20px;padding:2px 9px;white-space:nowrap}
+.mpane{display:flex;flex-direction:column;min-height:0}
+.mpane[hidden]{display:none}
+.mpane ul{margin:0;padding-left:17px;font-size:13.5px;line-height:1.9;color:#39424e;
+  max-height:232px;overflow-y:auto}
+.mpane ul::-webkit-scrollbar{width:6px}
+.mpane ul::-webkit-scrollbar-thumb{background:#ddd7cc;border-radius:6px}
+.mpane li::marker{color:var(--amber)}
+.mnote{margin-top:auto;padding-top:12px;font-size:11.5px;color:var(--faint)}
+
+/* 이번 달 남은 일정 */
+.mrow{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px dotted var(--line)}
+.mrow:first-child{border-top:0;padding-top:2px}
+.mrow .d{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:70px;letter-spacing:.02em}
+.mrow .t{font-size:13.5px;font-weight:500;line-height:1.45}
+.mrow .cat{font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap}
+
+footer{margin-top:14px;text-align:center;color:var(--faint);font-size:11px;
+  font-family:var(--mono);letter-spacing:.04em}
+"""
+
+
 def fmt_date(ev):
     s = (ev.get('start') or '')[:10]
     e = (ev.get('end') or '')[:10]
@@ -260,36 +364,8 @@ def fmt_date(ev):
     out = f'{sd.month}/{sd.day}({WEEKDAY_KR[sd.weekday()]})'
     if e and e != s:
         ed = datetime.date.fromisoformat(e)
-        out += f' ~ {ed.month}/{ed.day}({WEEKDAY_KR[ed.weekday()]})'
+        out += f'~{ed.month}/{ed.day}'
     return out
-
-
-def card(ev):
-    cat = ev.get('category') or '기타'
-    color = CATEGORY_COLORS.get(cat, '#7f8c8d')
-    memo = ev.get('memo') or ''
-    memo_html = f'<div class="memo">{html.escape(memo)}</div>' if memo else ''
-    return (
-        f'<div class="card">'
-        f'<div class="card-head">'
-        f'<span class="badge" style="background:{color};">{html.escape(cat)}</span>'
-        f'<span class="date">{html.escape(fmt_date(ev))}</span></div>'
-        f'<div class="title">{html.escape(ev.get("title") or "")}</div>'
-        f'{memo_html}</div>'
-    )
-
-
-def section(name, icon, color, events, empty_msg):
-    if events:
-        cards = ''.join(card(e) for e in events)
-    else:
-        cards = f'<div class="empty">{html.escape(empty_msg)}</div>'
-    return (
-        f'<section><h2 style="border-color:{color};">'
-        f'<span class="icon" style="background:{color};">{icon}</span>'
-        f'{html.escape(name)}<span class="count">{len(events)}건</span></h2>'
-        f'<div class="cards">{cards}</div></section>'
-    )
 
 
 def _period_card(t):
@@ -311,9 +387,10 @@ def _period_no(t):
         return 99
 
 
-def render_timetable_section(timetable, dept_label):
+def render_timetable_panel(timetable, dept_label):
     if not timetable:
-        body = ('<div class="empty">NEIS에 등록된 오늘 시간표가 없습니다. 학교에서 시간표를 NEIS에 올리면 자동으로 표시됩니다.</div>')
+        body = ('<div class="empty">NEIS에 등록된 오늘 시간표가 없습니다.<br>'
+                '학교에서 시간표를 NEIS에 올리면 자동으로 표시됩니다.</div>')
     else:
         # 4교시를 마치고 점심을 먹으므로 오전과 오후를 나누어 보여 준다.
         morning = [t for t in timetable if _period_no(t) <= LUNCH_AFTER_PERIOD]
@@ -322,41 +399,95 @@ def render_timetable_section(timetable, dept_label):
         if morning:
             parts.append('<div class="periods">' + ''.join(_period_card(t) for t in morning) + '</div>')
         if morning and afternoon:
-            parts.append('<div class="lunch">🍱 점심시간</div>')
+            parts.append('<div class="lunch">점심시간</div>')
         if afternoon:
             parts.append('<div class="periods">' + ''.join(_period_card(t) for t in afternoon) + '</div>')
         body = ''.join(parts)
     return (
-        f'<section><h2 style="border-color:#16a085;">'
-        f'<span class="icon" style="background:#16a085;">📚</span>'
-        f'오늘의 시간표 <span class="dept">({html.escape(dept_label)})</span>'
-        f'<span class="count">{len(timetable)}교시</span></h2>{body}</section>'
+        '<article class="panel">'
+        '<div class="panel-head"><h2>오늘의 시간표</h2>'
+        f'<span class="sub">{html.escape(dept_label)}</span><span class="sp"></span>'
+        f'<span class="tag">{len(timetable)}교시</span></div>'
+        f'<div class="panel-body">{body}</div></article>'
     )
 
 
-def render_meals_section(meals):
+def render_meal_panel(meals):
+    """교사에게는 중식이 가장 중요하므로 중식을 먼저 펼치고, 조식과 석식은 넘겨 본다."""
     if not meals:
-        body = ('<div class="empty">NEIS에 등록된 오늘 급식이 없습니다. 영양 담당 선생님이 식단을 NEIS에 올리면 자동으로 표시됩니다.</div>')
-    else:
-        items = []
-        for m in meals:
-            menu_html = ''.join(
-                f'<li>{html.escape(line)}</li>' for line in m['menu']
-            )
-            cal = m['cal']
-            cal_badge = f'<span class="cal">{html.escape(cal)}</span>' if cal else ''
-            items.append(
-                f'<div class="meal">'
-                f'<div class="meal-head"><span class="meal-name">{html.escape(m["name"])}</span>'
-                f'{cal_badge}</div>'
-                f'<ul class="menu">{menu_html}</ul></div>'
-            )
-        body = '<div class="meals-grid">' + ''.join(items) + '</div>'
+        body = ('<div class="empty">NEIS에 등록된 오늘 급식이 없습니다.<br>'
+                '영양 담당 선생님이 식단을 NEIS에 올리면 자동으로 표시됩니다.</div>')
+        return ('<article class="panel">'
+                '<div class="panel-head"><h2>오늘의 급식</h2><span class="sp"></span>'
+                '<span class="tag">0끼</span></div>'
+                f'<div class="panel-body">{body}</div></article>')
+
+    default_idx = next((i for i, m in enumerate(meals) if '중식' in (m.get('name') or '')), 0)
+    tabs, panes = [], []
+    for i, m in enumerate(meals):
+        on = ' on' if i == default_idx else ''
+        tabs.append(f'<button type="button" class="mtab{on}" data-meal="{i}" '
+                    f'data-kcal="{html.escape(m.get("cal") or "")}">'
+                    f'{html.escape(m.get("name") or "")}</button>')
+        items = ''.join(f'<li>{html.escape(x)}</li>' for x in m.get('menu', []))
+        hidden = '' if i == default_idx else ' hidden'
+        panes.append(f'<div class="mpane" data-pane="{i}"{hidden}><ul>{items}</ul></div>')
+
+    note = '' if len(meals) < 2 else '<div class="mnote">조식과 석식은 위 단추로 넘겨 보실 수 있습니다.</div>'
     return (
-        f'<section><h2 style="border-color:#e67e22;">'
-        f'<span class="icon" style="background:#e67e22;">🍱</span>'
-        f'오늘의 급식<span class="count">{len(meals)}끼</span></h2>{body}</section>'
+        '<article class="panel">'
+        '<div class="panel-head"><h2>오늘의 급식</h2><span class="sp"></span>'
+        f'<span class="tag">{len(meals)}끼</span></div>'
+        '<div class="panel-body" id="mealPanel">'
+        f'<div class="mtabs">{"".join(tabs)}'
+        f'<span class="kcal" id="mealKcal">{html.escape(meals[default_idx].get("cal") or "")}</span>'
+        f'</div>{"".join(panes)}{note}'
+        '</div></article>'
     )
+
+
+def render_month_panel(events):
+    if not events:
+        rows = '<div class="empty">이번 달 남은 중요 일정이 없습니다.</div>'
+    else:
+        out = []
+        for ev in events:
+            cat = ev.get('category') or '기타'
+            color = CATEGORY_COLORS.get(cat, '#7f8c8d')
+            out.append(
+                f'<div class="mrow"><span class="d">{html.escape(fmt_date(ev))}</span>'
+                f'<span class="t">{html.escape(ev.get("title") or "")}</span>'
+                f'<span class="sp"></span>'
+                f'<span class="cat" style="background:{color}14;color:{color}">{html.escape(cat)}</span>'
+                f'</div>'
+            )
+        rows = ''.join(out)
+    return (
+        '<article class="panel">'
+        '<div class="panel-head"><h2>이번 달 남은 일정</h2><span class="sp"></span>'
+        f'<span class="tag">{len(events)}건</span></div>'
+        f'<div class="panel-body">{rows}</div></article>'
+    )
+
+
+MEAL_SCRIPT = """
+<script>
+(function(){
+  var p=document.getElementById('mealPanel');
+  if(!p)return;
+  var tabs=p.querySelectorAll('.mtab'), panes=p.querySelectorAll('.mpane');
+  var kc=document.getElementById('mealKcal');
+  function show(i){
+    for(var k=0;k<tabs.length;k++){tabs[k].className='mtab'+(k===i?' on':'');}
+    for(var k=0;k<panes.length;k++){if(k===i){panes[k].removeAttribute('hidden');}else{panes[k].setAttribute('hidden','');}}
+    if(kc)kc.textContent=tabs[i].getAttribute('data-kcal')||'';
+  }
+  for(var k=0;k<tabs.length;k++){
+    (function(i){tabs[i].onclick=function(){show(i);};})(k);
+  }
+})();
+</script>
+"""
 
 
 def self_refresh_url():
@@ -405,83 +536,44 @@ def build_auto_refresh(url, stamp):
 
 def render_html(today, sections, timetable, meals, school, school_year, dept_label, generated_at,
                 workplan_html=''):
-    sec_t, sec_m, sec_w, sec_o = sections
-    today_str = today.strftime(f'%Y년 %m월 %d일 ({WEEKDAY_KR[today.weekday()]})')
-    body = (
-        section('오늘', '🔴', '#e74c3c', sec_t, '오늘 등록된 일정이 없습니다.') +
-        section('내일', '🟡', '#f39c12', sec_m, '내일 등록된 일정이 없습니다.') +
-        render_timetable_section(timetable, dept_label) +
-        render_meals_section(meals) +
-        workplan_html +
-        section('다음 주', '🟢', '#27ae60', sec_w, '다음 주 일정이 없습니다.') +
-        section('이번 달 남은 중요 일정', '🔵', '#3498db', sec_o,
-                '이번 달 남은 중요 일정이 없습니다.')
-    )
+    # 오늘·내일·다음 주 일정은 주간 업무 계획의 '주요일정' 행에 그대로 실리므로
+    # 중복을 없애고, 한 달 앞을 보는 목록만 보조 영역에 남긴다.
+    sec_o = sections[3]
+    dow = WEEKDAY_KR[today.weekday()]
+    date_str = today.strftime('%Y. %m. %d.')
+    aux = (render_timetable_panel(timetable, dept_label)
+           + render_meal_panel(meals)
+           + render_month_panel(sec_o))
     return f'''<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="briefing-build" content="{html.escape(generated_at)}">
-<title>학사일정 브리핑 — {today_str}</title>
-<style>
-  *{{box-sizing:border-box}}
-  body{{font-family:'Pretendard','Malgun Gothic',sans-serif;background:#f5f6fa;
-       margin:0;padding:32px;color:#2c3e50;max-width:1100px;margin:0 auto}}
-  header{{background:linear-gradient(135deg,#667eea,#764ba2);color:white;
-         padding:28px 32px;border-radius:16px;margin:32px 0 24px;
-         box-shadow:0 8px 24px rgba(102,126,234,.3)}}
-  header h1{{margin:0 0 6px;font-size:28px}}
-  header .sub{{opacity:.9;font-size:15px}}
-  section{{background:white;border-radius:12px;padding:20px 24px;
-          margin-bottom:18px;box-shadow:0 2px 8px rgba(0,0,0,.05)}}
-  section h2{{margin:0 0 16px;padding-bottom:12px;border-bottom:3px solid;
-             display:flex;align-items:center;gap:10px;font-size:19px;flex-wrap:wrap}}
-  .icon{{display:inline-flex;align-items:center;justify-content:center;
-        width:30px;height:30px;border-radius:8px;color:white;font-size:14px;
-        flex-shrink:0}}
-  .dept{{font-size:14px;color:#7f8c8d;font-weight:normal}}
-  .count{{margin-left:auto;font-size:13px;font-weight:normal;color:#7f8c8d;
-         background:#ecf0f1;padding:3px 10px;border-radius:10px}}
-  .cards{{display:flex;flex-direction:column;gap:10px}}
-  .card{{border:1px solid #e1e8ed;border-radius:10px;padding:14px 16px;
-        transition:all .15s}}
-  .card:hover{{border-color:#3498db;transform:translateX(2px)}}
-  .card-head{{display:flex;align-items:center;gap:10px;margin-bottom:6px}}
-  .badge{{color:white;font-size:12px;padding:3px 10px;border-radius:10px;
-         font-weight:600}}
-  .date{{color:#7f8c8d;font-size:13px;font-weight:500}}
-  .title{{font-size:16px;font-weight:600;margin-bottom:4px}}
-  .memo{{color:#5d6d7e;font-size:14px;margin-top:4px}}
-  .empty{{color:#95a5a6;font-style:italic;padding:8px 4px}}
-  .periods{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}}
-  .lunch{{margin:9px 0;text-align:center;font-size:12px;font-weight:600;color:#b9770e;
-         background:#fdf6e9;border:1px dashed #f0cfa0;border-radius:8px;padding:5px 0}}
-  @media (max-width:760px){{.periods{{grid-template-columns:repeat(2,1fr)}}}}
-  .period{{display:flex;flex-direction:column;gap:4px;padding:10px 12px;
-          border:1px solid #e1e8ed;border-radius:8px;background:#fafbfc}}
-  .period .num{{font-size:11px;font-weight:700;color:#16a085;letter-spacing:.5px}}
-  .period .subj{{font-size:14px;font-weight:500}}
-  .period.rest{{background:#fef5e7;border-color:#f8c471}}
-  .period.rest .subj{{color:#a04000;font-style:italic}}
-  .meals-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-              gap:12px}}
-  .meal{{border:1px solid #e1e8ed;border-radius:10px;padding:14px 16px;
-        background:#fffaf0}}
-  .meal-head{{display:flex;align-items:center;gap:10px;margin-bottom:8px;
-             padding-bottom:8px;border-bottom:1px dashed #ecdba8}}
-  .meal-name{{font-weight:700;color:#d35400;font-size:15px}}
-  .cal{{margin-left:auto;font-size:11px;color:#7f8c8d;background:#fff;
-       padding:2px 8px;border-radius:8px;border:1px solid #ecdba8}}
-  .menu{{margin:0;padding-left:18px;font-size:13px;color:#5d4037;line-height:1.7}}
-  .menu li{{margin:0}}
-  footer{{text-align:center;color:#95a5a6;font-size:12px;margin-top:24px;padding:0 0 32px}}
-</style>
+<title>교무실 브리핑 — {date_str}</title>
+<style>{PAGE_CSS}</style>
 </head>
 <body>
-<header><h1>📅 오늘의 학사일정 브리핑</h1>
-<div class="sub">{html.escape(school)} · {html.escape(school_year)} · {today_str}</div></header>
-{body}
-<footer>캐시 갱신 {html.escape(generated_at)} KST · 데이터 출처: 노션 학사일정 + NEIS Open API</footer>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">JNE</span>
+      <div>
+        <h1>교무실 브리핑</h1>
+        <p>{html.escape(school)} · {html.escape(school_year)}</p>
+      </div>
+    </div>
+    <span class="sp"></span>
+    <div class="daypill">
+      <span class="dow">{dow}요일</span>
+      <span class="d">{date_str}</span>
+    </div>
+  </header>
+{workplan_html}
+  <section class="aux">{aux}</section>
+  <footer>갱신 {html.escape(generated_at)} KST · 노션 학사일정 + NEIS Open API</footer>
+</div>
+{MEAL_SCRIPT}
 {build_auto_refresh(self_refresh_url(), generated_at)}
 </body></html>'''
 
