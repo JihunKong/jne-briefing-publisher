@@ -35,10 +35,10 @@ WEEKDAY_KR = ['월', '화', '수', '목', '금', '토', '일']
 
 NEIS_DEFAULTS = {
     'atpt_code': 'Q10',
-    'school_code': '8490586',
+    'school_code': '7140315',
     'school_name': '전남미래국제고등학교',
     'year': 2026,
-    'semester': 1,
+    'semester': 2,
     'department': '설비시스템과',
     'grade': 1,
     'class_nm': '1',
@@ -128,6 +128,16 @@ def neis_get(endpoint, params):
     except ValueError:
         print(f'  NEIS {endpoint} JSON 파싱 실패: {r.text[:200]}')
         return None
+    # 인증키 오류나 '자료 없음'은 최상위 RESULT로만 오기 때문에,
+    # 아래 반복문(목록 안의 head)만 보면 원인을 알 수 없이 조용히 넘어간다.
+    top = j.get('RESULT')
+    if isinstance(top, dict):
+        code = top.get('CODE', '')
+        msg = top.get('MESSAGE', '')
+        if code and code != 'INFO-000':
+            print(f'  NEIS {endpoint} {code}: {msg}')
+            return None
+
     for key, val in j.items():
         if not isinstance(val, list):
             continue
