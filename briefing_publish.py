@@ -262,7 +262,10 @@ def classify(events, today, tomorrow, week_start, week_end, upcoming_end):
 
 # ============== HTML 렌더 =================
 PAGE_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+/* 바깥에서 글꼴을 받아 오지 않는다.
+   학교 망에서 그 요청이 막히면 브라우저가 스타일이 다 올 때까지 스크립트 실행을
+   미루기 때문에, 화면이 반쯤 그려진 채로 한참 멈춰 있게 된다.
+   윈도우와 맥에 이미 들어 있는 글꼴만 쓰면 그런 일이 생기지 않는다. */
 
 :root{
   --ink:#131b24; --paper:#f2efe9; --card:#ffffff;
@@ -273,7 +276,7 @@ PAGE_CSS = """
   --today:#1d4f7c; --today-bg:#eaf1f8;
   --radius:14px;
   --shadow:0 1px 2px rgba(19,27,36,.04), 0 10px 28px rgba(19,27,36,.055);
-  --mono:'IBM Plex Mono', ui-monospace, Consolas, 'Courier New', monospace;
+  --mono:ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Consolas, 'D2Coding', 'Courier New', monospace;
   --sans:'Pretendard','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',system-ui,sans-serif;
 }
 *{box-sizing:border-box}
@@ -300,6 +303,8 @@ body{
 .brand h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;line-height:1.2}
 .brand p{margin:2px 0 0;font-size:13px;color:#a5b0bc}
 .sp{flex:1}
+.relaunch{background:var(--amber-bg);border:1px solid #eddcc2;border-radius:11px;
+  padding:8px 14px;margin-bottom:10px;font-size:13px;color:var(--amber);font-weight:600}
 .daypill{text-align:right;position:relative}
 .daypill .dow{display:block;font-size:11.5px;color:#a5b0bc;letter-spacing:.28em;margin-bottom:1px}
 .daypill .d{font-family:var(--mono);font-size:23px;font-weight:600;letter-spacing:.02em;line-height:1.1}
@@ -492,6 +497,49 @@ def render_month_panel(events):
     )
 
 
+TAIL_SCRIPT = """
+<script>
+(function(){
+  /* 이 스크립트는 문서의 맨 끝에 있어야 한다.
+     예전 판본이 document.write 로 이 문서를 밀어 넣는 경우, 앞쪽에 스크립트가
+     있으면 그 지점에서 문서가 잘려 나가기 때문이다.
+
+     예전 판본은 문서만 바꿀 뿐 창(window)은 그대로 두므로, 예전 문서가 걸어 둔
+     setInterval 이 끊기지 않고 살아남는다. 그 타이머가 깨어나 예전 방식으로
+     화면을 덮어써 버리기 때문에, 여기에서 남아 있는 타이머를 모두 끊는다.
+
+     이 문서의 시작 함수들은 타이머를 바로 걸지 않고 미뤄 두었다가, 정리가 끝난
+     뒤에 여기에서 실행한다. 그래야 방금 건 타이머까지 함께 끊기지 않는다. */
+  var last = 0;
+  try{
+    last = setTimeout(function(){}, 0);
+    for(var i = 1; i <= last; i++){ clearTimeout(i); clearInterval(i); }
+  }catch(e){}
+  /* 이 문서가 그려지기 전에 이미 타이머가 있었다면, 예전 판본에서 넘어온 화면이다. */
+  window.__jneReborn = (last > 1) || !!window.__jneBooted;
+  window.__jneBooted = true;
+
+  var starters = window.__jneInits || [];
+  window.__jneInits = [];
+  for(var k = 0; k < starters.length; k++){
+    try{ starters[k](); }catch(e2){}
+  }
+
+  if(window.__jneReborn){
+    var shell = document.querySelector('.shell');
+    if(shell && !document.getElementById('relaunchNote')){
+      var d = document.createElement('div');
+      d.id = 'relaunchNote';
+      d.className = 'relaunch';
+      d.textContent = '이 화면은 예전 판본에서 넘어온 것입니다. 학사일정브리핑 프로그램을 한 번 닫았다가 다시 실행하시면 이 줄이 사라집니다.';
+      shell.insertBefore(d, shell.firstChild);
+    }
+  }
+})();
+</script>
+"""
+
+
 MEAL_SCRIPT = """
 <script>
 /* 급식 구역을 새 발행본으로 바꿔 끼운 뒤에도 다시 연결해야 하므로 이름을 붙여 둔다. */
@@ -592,8 +640,8 @@ def build_auto_refresh(url, stamp):
         '    }).catch(function(){});\n'
         '  }\n'
         '  function start(){setTimeout(check,20000);setInterval(check,10*60*1000);}\n'
-        '  if(document.readyState==="loading"){window.addEventListener("DOMContentLoaded",start);}\n'
-        '  else{start();}\n'
+        '  window.__jneInits=window.__jneInits||[];\n'
+        '  window.__jneInits.push(start);\n'
         '})();\n'
         '</script>'
     )
@@ -640,6 +688,7 @@ def render_html(today, sections, timetable, meals, school, school_year, dept_lab
 </div>
 {MEAL_SCRIPT}
 {build_auto_refresh(self_refresh_url(), generated_at)}
+{TAIL_SCRIPT}
 </body></html>'''
 
 

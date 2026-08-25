@@ -508,8 +508,20 @@ _JS = r"""
     el.innerHTML=html;
     return true;
   }
+  /* 예전 판본의 살아남은 코드가 이 구역을 통째로 덮어써 버리는 일이 있었다.
+     그런 경우에도 스스로 뼈대를 다시 세워 제 모습을 되찾도록 한다. */
+  function ensureScaffold(){
+    var c=byId('wpContent');
+    if(!c)return false;
+    if(byId('wpMajorBlk')&&byId('wpNotesBlk')&&byId('wpCardsBlk')&&byId('wpStripBlk'))return true;
+    c.innerHTML='<div class="wp-main">'
+      +'<div id="wpMajorBlk"></div><div id="wpNotesBlk"></div><div id="wpCardsBlk"></div>'
+      +'</div><div class="wp-strip" id="wpStripBlk"></div>';
+    return true;
+  }
   function renderAll(){
     var d=DATA,today=d.todayIso||'';
+    if(!ensureScaffold())return;
     put('wpMajorBlk',majorBlock(d,today));
     put('wpNotesBlk',notesBlock(d));
     /* 카드를 다시 그리면 읽던 자리가 맨 위로 돌아가므로, 스크롤 위치를 옮겨 둔다. */
@@ -664,6 +676,11 @@ _JS = r"""
   }
   function init(){
     if(!API||!window.fetch)return;
+    /* 예전 문서에서 이미 보낸 요청이 뒤늦게 돌아와 화면을 덮어쓸 수 있으므로,
+       처음 얼마 동안은 몇 번 더 제 모습을 확인한다. */
+    if(window.__jneReborn){
+      [1500,4000,9000].forEach(function(ms){setTimeout(function(){renderAll();},ms);});
+    }
     lastAt=+new Date();
     refresh(false);
     setTimeout(function(){
@@ -675,9 +692,11 @@ _JS = r"""
       if(!document.hidden && (+new Date()) - lastAt > PERIOD)tick();
     });
   }
-  /* 문서를 이미 다 불러온 뒤에 이 스크립트가 실행되는 경우에도 동작해야 한다. */
-  if(document.readyState==='loading'){window.addEventListener('DOMContentLoaded',init);}
-  else{init();}
+  /* 여기에서 바로 시작하지 않고 문서 맨 끝의 정리 스크립트에 맡긴다.
+     예전 판본이 남긴 타이머를 먼저 끊은 다음에 우리 타이머를 걸어야,
+     방금 건 타이머까지 함께 끊기지 않는다. */
+  window.__jneInits=window.__jneInits||[];
+  window.__jneInits.push(init);
 })();
 </script>
 """
