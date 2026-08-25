@@ -339,6 +339,50 @@ def render_meals_section(meals):
     )
 
 
+def self_refresh_url():
+    """게시된 briefing.html 의 주소. 저장소에 주소를 적지 않고 환경 변수로 만든다."""
+    direct = os.environ.get('BRIEFING_SELF_URL')
+    if direct:
+        return direct.strip()
+    owner = (os.environ.get('GITHUB_REPOSITORY_OWNER') or '').strip()
+    gist_id = (os.environ.get('GIST_ID') or '').strip()
+    if owner and gist_id:
+        return f'https://gist.githubusercontent.com/{owner}/{gist_id}/raw/briefing.html'
+    return ''
+
+
+def build_auto_refresh(url, stamp):
+    """열려 있는 화면이 스스로 최신 발행본을 확인해 바꿔치기하도록 한다.
+
+    배부한 프로그램은 실행할 때 한 번만 파일을 내려받기 때문에, 아침에 띄워 둔
+    화면은 하루 종일 그대로 남는다. 이 스크립트가 있으면 프로그램을 다시 실행하지
+    않아도 발행 시각(06시, 13시)의 새 내용이 10분 안에 화면에 반영된다.
+
+    발행 표식이 같으면 아무 일도 하지 않으므로 무한히 다시 그리지 않는다.
+    """
+    if not url:
+        return ''
+    return (
+        '<script>\n'
+        '(function(){\n'
+        '  var SRC=' + json.dumps(url) + ';\n'
+        '  var MINE=' + json.dumps(stamp) + ';\n'
+        '  function stampOf(t){var m=t.match(/name="briefing-build" content="([^"]*)"/);return m?m[1]:"";}\n'
+        '  function check(){\n'
+        '    if(!window.fetch)return;\n'
+        '    fetch(SRC,{cache:"no-store"}).then(function(r){return r.text();}).then(function(t){\n'
+        '      var s=stampOf(t);\n'
+        '      if(s&&s!==MINE&&t.length>500){document.open();document.write(t);document.close();}\n'
+        '    }).catch(function(){});\n'
+        '  }\n'
+        '  function start(){check();setInterval(check,10*60*1000);}\n'
+        '  if(document.readyState==="loading"){window.addEventListener("DOMContentLoaded",start);}\n'
+        '  else{start();}\n'
+        '})();\n'
+        '</script>'
+    )
+
+
 def render_html(today, sections, timetable, meals, school, school_year, dept_label, generated_at,
                 workplan_html=''):
     sec_t, sec_m, sec_w, sec_o = sections
@@ -357,6 +401,7 @@ def render_html(today, sections, timetable, meals, school, school_year, dept_lab
 <html lang="ko">
 <head>
 <meta charset="utf-8">
+<meta name="briefing-build" content="{html.escape(generated_at)}">
 <title>학사일정 브리핑 — {today_str}</title>
 <style>
   *{{box-sizing:border-box}}
@@ -415,6 +460,7 @@ def render_html(today, sections, timetable, meals, school, school_year, dept_lab
 <div class="sub">{html.escape(school)} · {html.escape(school_year)} · {today_str}</div></header>
 {body}
 <footer>캐시 갱신 {html.escape(generated_at)} KST · 데이터 출처: 노션 학사일정 + NEIS Open API</footer>
+{build_auto_refresh(self_refresh_url(), generated_at)}
 </body></html>'''
 
 
