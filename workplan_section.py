@@ -196,9 +196,9 @@ def _card_week(label, week, dept_name, today_iso):
 
 def _dept_card(dept, idx, data, today_iso):
     """부서가 많이 적어도 카드가 아래로 늘어지지 않도록 안쪽만 스크롤되게 한다."""
-    return ('<div class="wp-card"><h4 style="color:%s">%s</h4>'
+    return ('<div class="wp-card" data-dept="%s"><h4 style="color:%s">%s</h4>'
             '<div class="wp-cscroll">%s%s</div></div>'
-            % (_tone(idx), _esc(dept['short']),
+            % (_esc(dept['name']), _tone(idx), _esc(dept['short']),
                _card_week('이번 주', data.get('thisWeek'), dept['name'], today_iso),
                _card_week('다음 주', data.get('nextWeek'), dept['name'], today_iso)))
 
@@ -213,32 +213,37 @@ def _cards_block(data, today_iso):
             '<div class="wp-cards">%s</div>' % cards)
 
 
-def _strip(data):
+def _strip_inner(data):
     """부서별 입력 현황. 계획 내용을 먼저 읽게 하려고 맨 아래에 둔다."""
-    out = ['<div class="wp-strip">',
-           _stat('이번 주 입력', data.get('thisWeek'), '이번 주 탭이 아직 없습니다.'),
+    out = [_stat('이번 주 입력', data.get('thisWeek'), '이번 주 탭이 아직 없습니다.'),
            _stat('다음 주 입력', data.get('nextWeek'), '다음 주 탭이 아직 없습니다.')]
     for mon in data.get('months', []):
         out.append(_stat('%s 사전 계획' % mon.get('label', ''), mon, ''))
-    out.append('</div>')
     return ''.join(out)
 
 
 def _ssr(data):
+    """구역마다 고정된 상자를 씌워 둔다.
+
+    나중에 최신 자료를 받았을 때 화면 전체를 다시 그리지 않고, 내용이 실제로
+    달라진 상자만 갈아 끼우기 위해서이다. 그래야 화면이 깜빡이지 않는다.
+    """
     today = data.get('todayIso', '')
-    body = ('<div class="wp-main">'
-            + _major_block(data, today)
-            + _notes_block(data)
-            + _cards_block(data, today)
-            + '</div>')
-    return body + _strip(data)
+    return ('<div class="wp-main">'
+            '<div id="wpMajorBlk">%s</div>'
+            '<div id="wpNotesBlk">%s</div>'
+            '<div id="wpCardsBlk">%s</div>'
+            '</div>'
+            '<div class="wp-strip" id="wpStripBlk">%s</div>'
+            % (_major_block(data, today), _notes_block(data),
+               _cards_block(data, today), _strip_inner(data)))
 
 
 # ------------------------------------------------------------------ 스타일
 
 _CSS = """
 <style>
-  .hero{margin-top:16px}
+  .hero{margin-top:10px}
   .hero .panel-head{background:#fbfaf7}
   .wp-btn{display:inline-block;font-size:13.5px;font-weight:600;padding:7px 15px;border-radius:9px;
     border:1px solid var(--line);background:#fff;color:var(--text);text-decoration:none;cursor:pointer;
@@ -249,8 +254,8 @@ _CSS = """
 
   .wp-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line-2);
     border-top:1px solid var(--line-2)}
-  .wp-stat{background:#fdfcfa;padding:12px 20px 13px}
-  .wp-stat-top{display:flex;align-items:baseline;gap:9px;margin-bottom:9px}
+  .wp-stat{background:#fdfcfa;padding:6px 18px 7px}
+  .wp-stat-top{display:flex;align-items:baseline;gap:9px;margin-bottom:5px}
   .wp-stat-title{font-size:13.5px;font-weight:700;color:var(--muted);letter-spacing:.01em}
   .wp-count{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1;margin-left:auto}
   .wp-count i{font-style:normal;font-size:13px;color:var(--faint)}
@@ -263,53 +268,57 @@ _CSS = """
     border:1px dashed rgba(169,90,8,.35)}
   .wp-muted{color:var(--faint);font-size:13.5px}
 
-  .wp-main{padding:16px 20px 18px}
+  .wp-main{padding:9px 18px 10px}
   .wp-empty{color:var(--faint);font-size:14px;padding:14px 2px}
   .wp-sub{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.01em;
-    margin:0 0 8px;display:flex;align-items:baseline;gap:9px}
+    margin:0 0 6px;display:flex;align-items:baseline;gap:9px}
   .wp-sub::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--line);
     align-self:center}
   .wp-sub em{font-style:normal;font-weight:400;font-size:12.5px;color:#b0a99c}
-  .wp-notes + .wp-sub,.wp-major + .wp-sub{margin-top:16px}
+  #wpNotesBlk:empty{display:none}
+  #wpCardsBlk{margin-top:9px}
 
   /* 주요일정: 맨 앞 한 칸이 주 이름이고, 그 뒤로 요일 여섯 칸이 이어진다. */
-  .wp-major{display:grid;grid-template-columns:112px repeat(6,1fr);gap:6px}
-  .wp-rowhead{display:flex;flex-direction:column;justify-content:center;gap:3px;
-    padding:7px 10px;border-radius:10px;background:var(--ink);color:#f1eee7}
+  .wp-major{display:grid;grid-template-columns:108px repeat(6,1fr);gap:5px}
+  .wp-rowhead{display:flex;flex-direction:column;justify-content:center;gap:2px;
+    padding:6px 9px;border-radius:10px;background:var(--ink);color:#f1eee7}
   .wp-rowhead b{font-size:14.5px;font-weight:700;letter-spacing:-.01em}
   .wp-rowhead span{font-family:var(--mono);font-size:11px;color:#a5b0bc;letter-spacing:.02em}
-  .wp-mcell{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fcfbf9;
-    min-height:58px}
+  /* 한 칸에 일정이 몰려도 위아래 줄이 밀려나지 않도록 칸 높이를 묶어 둔다. */
+  .wp-mcell{border:1px solid var(--line);border-radius:10px;padding:5px 9px;background:#fcfbf9;
+    min-height:36px;max-height:88px;overflow-y:auto}
+  .wp-mcell::-webkit-scrollbar{width:6px}
+  .wp-mcell::-webkit-scrollbar-thumb{background:#ddd7cc;border-radius:6px}
   .wp-mcell.wp-mwide{grid-column:2/-1;display:flex;align-items:center;color:var(--faint);
     font-size:12.5px}
   .wp-mcell.is-today{background:var(--today-bg);border-color:#c8dbee}
   .wp-mday{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);
     letter-spacing:.04em}
   .wp-mcell.is-today .wp-mday{color:var(--today)}
-  .wp-mline{font-size:13.5px;line-height:1.42;margin-top:5px;color:#2b3542;word-break:break-word}
-  .wp-mnone{font-size:13.5px;color:#d3ccbf;margin-top:5px}
+  .wp-mline{font-size:13.5px;line-height:1.34;margin-top:2px;color:#2b3542;word-break:break-word}
+  .wp-mnone{font-size:13.5px;color:#d3ccbf;margin-top:2px}
 
   /* 전달·협의사항 */
-  .wp-notes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .wp-notes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:9px}
   .wp-note{background:var(--amber-bg);border:1px solid #eddcc2;border-radius:11px;
-    padding:10px 13px;font-size:14px;line-height:1.55}
+    padding:6px 12px;font-size:14px;line-height:1.45}
   .wp-note b{display:block;margin-bottom:3px;color:var(--amber);font-size:12.5px;letter-spacing:.02em}
 
   /* 부서별 계획: 부서 한 곳이 카드 한 장이고, 그 안에 두 주가 나란히 들어간다.
      열 수를 고정하지 않고 카드가 읽히는 최소 너비로 정해야, 넓은 화면에서 부서 넷이
      한 줄에 그대로 들어가고 좁아질 때에만 줄이 나뉜다. */
   .wp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-    gap:12px;align-items:stretch}
-  .wp-card{border:1px solid var(--line);border-radius:12px;padding:11px 13px 12px;background:#fff;
-    display:flex;flex-direction:column;min-width:0;min-height:170px;max-height:320px}
-  .wp-card h4{margin:0 0 8px;font-size:14px;font-weight:700;letter-spacing:-.01em;flex:none}
+    gap:10px;align-items:stretch}
+  .wp-card{border:1px solid var(--line);border-radius:12px;padding:9px 12px 10px;background:#fff;
+    display:flex;flex-direction:column;min-width:0;min-height:110px;max-height:138px}
+  .wp-card h4{margin:0 0 6px;font-size:14px;font-weight:700;letter-spacing:-.01em;flex:none}
   /* 많이 적은 부서가 있어도 화면이 아래로 늘어지지 않도록 안쪽만 스크롤한다. */
   .wp-cscroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:6px;
     scrollbar-width:thin;scrollbar-color:#cfc7b8 transparent}
   .wp-cscroll::-webkit-scrollbar{width:8px}
   .wp-cscroll::-webkit-scrollbar-thumb{background:#cfc7b8;border-radius:8px}
   .wp-cscroll::-webkit-scrollbar-track{background:transparent}
-  .wp-cwk{display:grid;grid-template-columns:52px 1fr;gap:9px;padding:8px 0;
+  .wp-cwk{display:grid;grid-template-columns:52px 1fr;gap:9px;padding:6px 0;
     border-top:1px dotted var(--line)}
   .wp-cwk:first-of-type{border-top:0;padding-top:0}
   .wp-clabel{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--faint);
@@ -337,7 +346,7 @@ _CSS = """
   .wp-field textarea:focus,.wp-note-in:focus{outline:0;border-color:var(--ink);
     box-shadow:0 0 0 3px rgba(19,27,36,.06)}
   .wp-actions{display:flex;align-items:center;gap:12px;margin-top:12px}
-  .wp-foot{padding:10px 22px 14px;font-family:var(--mono);font-size:11.5px;color:var(--faint);
+  .wp-foot{padding:5px 20px 7px;font-family:var(--mono);font-size:11.5px;color:var(--faint);
     border-top:1px solid var(--line-2);letter-spacing:.03em}
 
   .wp-toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:var(--ink);
@@ -477,7 +486,7 @@ _JS = r"""
       +'<div class="wp-empty">부서 목록을 불러오지 못했습니다.</div>';
     var cards='';
     depts.forEach(function(dp,i){
-      cards+='<div class="wp-card"><h4 style="color:'+tone(i)+'">'+esc(dp.short)+'</h4>'
+      cards+='<div class="wp-card" data-dept="'+esc(dp.name)+'"><h4 style="color:'+tone(i)+'">'+esc(dp.short)+'</h4>'
         +'<div class="wp-cscroll">'
         +cardWeek('이번 주',d.thisWeek,dp.name,today)
         +cardWeek('다음 주',d.nextWeek,dp.name,today)+'</div></div>';
@@ -485,19 +494,42 @@ _JS = r"""
     return '<div class="wp-sub">부서별 계획 <em>부서마다 이번 주와 다음 주를 함께 봅니다</em></div>'
       +'<div class="wp-cards">'+cards+'</div>';
   }
-  function renderAll(){
-    var d=DATA,today=d.todayIso||'';
-    var h='<div class="wp-main">'+majorBlock(d,today)+notesBlock(d)+cardsBlock(d,today)+'</div>';
-    h+='<div class="wp-strip">';
-    h+=stat('이번 주 입력',d.thisWeek,'이번 주 탭이 아직 없습니다.');
+  function stripInner(d){
+    var h=stat('이번 주 입력',d.thisWeek,'이번 주 탭이 아직 없습니다.');
     h+=stat('다음 주 입력',d.nextWeek,'다음 주 탭이 아직 없습니다.');
     (d.months||[]).forEach(function(m){h+=stat(m.label+' 사전 계획',m,'');});
-    h+='</div>';
-    var c=byId('wpContent'); if(c)c.innerHTML=h;
+    return h;
+  }
+  /* 새 내용을 먼저 문자열로 만들어 두고, 지금 화면과 다를 때에만 갈아 끼운다.
+     대부분의 갱신은 바뀐 것이 없으므로 화면에 아무 일도 일어나지 않는다. */
+  function put(id,html){
+    var el=byId(id);
+    if(!el||el.innerHTML===html)return false;
+    el.innerHTML=html;
+    return true;
+  }
+  function renderAll(){
+    var d=DATA,today=d.todayIso||'';
+    put('wpMajorBlk',majorBlock(d,today));
+    put('wpNotesBlk',notesBlock(d));
+    /* 카드를 다시 그리면 읽던 자리가 맨 위로 돌아가므로, 스크롤 위치를 옮겨 둔다. */
+    var keep={};
+    Array.prototype.forEach.call(document.querySelectorAll('#wpCardsBlk .wp-card'),function(c){
+      var k=c.getAttribute('data-dept'),sc=c.querySelector('.wp-cscroll');
+      if(k&&sc)keep[k]=sc.scrollTop;
+    });
+    if(put('wpCardsBlk',cardsBlock(d,today))){
+      Array.prototype.forEach.call(document.querySelectorAll('#wpCardsBlk .wp-card'),function(c){
+        var k=c.getAttribute('data-dept'),sc=c.querySelector('.wp-cscroll');
+        if(k&&sc&&keep[k])sc.scrollTop=keep[k];
+      });
+    }
+    put('wpStripBlk',stripInner(d));
     var b=byId('wpCount');
     if(b&&d.nextWeek){
       var t=(d.nextWeek.filled||[]).length+(d.nextWeek.missing||[]).length;
-      b.textContent='다음 주 '+(d.nextWeek.filled||[]).length+'/'+t+' 부서';
+      var label='다음 주 '+(d.nextWeek.filled||[]).length+'/'+t+' 부서';
+      if(b.textContent!==label)b.textContent=label;
     }
     renderInput(true);
   }
