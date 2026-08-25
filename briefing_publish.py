@@ -23,6 +23,8 @@ NOTION_VERSION = '2025-09-03'
 ACADEMIC_DS_ID = os.environ.get(
     'NOTION_DS_ID', '345e02e6-3ad9-819a-9e7d-000b18947124')
 FETCH_LOOKAHEAD_DAYS = 90
+# 이 교시를 마치고 점심시간이다. 시간표를 오전·오후로 나누는 기준으로 쓴다.
+LUNCH_AFTER_PERIOD = 4
 
 KST = datetime.timezone(datetime.timedelta(hours=9))
 
@@ -290,22 +292,40 @@ def section(name, icon, color, events, empty_msg):
     )
 
 
+def _period_card(t):
+    content = t['content'] or '—'
+    content_class = 'rest' if any(
+        k in content for k in ('휴업', '공휴', '연휴', '방학', '어린이날', '개교기념')
+    ) else ''
+    return (
+        f'<div class="period {content_class}">'
+        f'<span class="num">{html.escape(str(t["period"]))}교시</span>'
+        f'<span class="subj">{html.escape(content)}</span></div>'
+    )
+
+
+def _period_no(t):
+    try:
+        return int(t['period'])
+    except (TypeError, ValueError):
+        return 99
+
+
 def render_timetable_section(timetable, dept_label):
     if not timetable:
         body = ('<div class="empty">NEIS에 등록된 오늘 시간표가 없습니다. 학교에서 시간표를 NEIS에 올리면 자동으로 표시됩니다.</div>')
     else:
-        rows = []
-        for t in timetable:
-            content = t['content'] or '—'
-            content_class = 'rest' if any(
-                k in content for k in ('휴업', '공휴', '연휴', '방학', '어린이날', '개교기념')
-            ) else ''
-            rows.append(
-                f'<div class="period {content_class}">'
-                f'<span class="num">{html.escape(str(t["period"]))}교시</span>'
-                f'<span class="subj">{html.escape(content)}</span></div>'
-            )
-        body = '<div class="periods">' + ''.join(rows) + '</div>'
+        # 4교시를 마치고 점심을 먹으므로 오전과 오후를 나누어 보여 준다.
+        morning = [t for t in timetable if _period_no(t) <= LUNCH_AFTER_PERIOD]
+        afternoon = [t for t in timetable if _period_no(t) > LUNCH_AFTER_PERIOD]
+        parts = []
+        if morning:
+            parts.append('<div class="periods">' + ''.join(_period_card(t) for t in morning) + '</div>')
+        if morning and afternoon:
+            parts.append('<div class="lunch">🍱 점심시간</div>')
+        if afternoon:
+            parts.append('<div class="periods">' + ''.join(_period_card(t) for t in afternoon) + '</div>')
+        body = ''.join(parts)
     return (
         f'<section><h2 style="border-color:#16a085;">'
         f'<span class="icon" style="background:#16a085;">📚</span>'
@@ -433,8 +453,10 @@ def render_html(today, sections, timetable, meals, school, school_year, dept_lab
   .title{{font-size:16px;font-weight:600;margin-bottom:4px}}
   .memo{{color:#5d6d7e;font-size:14px;margin-top:4px}}
   .empty{{color:#95a5a6;font-style:italic;padding:8px 4px}}
-  .periods{{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
-           gap:8px}}
+  .periods{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}}
+  .lunch{{margin:9px 0;text-align:center;font-size:12px;font-weight:600;color:#b9770e;
+         background:#fdf6e9;border:1px dashed #f0cfa0;border-radius:8px;padding:5px 0}}
+  @media (max-width:760px){{.periods{{grid-template-columns:repeat(2,1fr)}}}}
   .period{{display:flex;flex-direction:column;gap:4px;padding:10px 12px;
           border:1px solid #e1e8ed;border-radius:8px;background:#fafbfc}}
   .period .num{{font-size:11px;font-weight:700;color:#16a085;letter-spacing:.5px}}
