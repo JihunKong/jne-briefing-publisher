@@ -143,24 +143,36 @@ def neis_get(endpoint, params):
     return j
 
 
-def fetch_timetable(neis_cfg, api_key, ymd):
+def _timetable_rows(neis_cfg, api_key, ymd, semester):
     j = neis_get('hisTimetable', {
         'KEY': api_key, 'Type': 'json',
         'pIndex': '1', 'pSize': '50',
         'ATPT_OFCDC_SC_CODE': neis_cfg['atpt_code'],
         'SD_SCHUL_CODE': neis_cfg['school_code'],
         'AY': str(neis_cfg['year']),
-        'SEM': str(neis_cfg['semester']),
+        'SEM': str(semester),
         'GRADE': str(neis_cfg['grade']),
         'CLASS_NM': str(neis_cfg['class_nm']),
         'DDDEP_NM': neis_cfg['department'],
         'TI_FROM_YMD': ymd, 'TI_TO_YMD': ymd,
     })
-    rows = []
     if j and 'hisTimetable' in j:
         for item in j['hisTimetable']:
             if 'row' in item:
-                rows = item['row']; break
+                return item['row']
+    return []
+
+
+def fetch_timetable(neis_cfg, api_key, ymd):
+    # 설정된 학기로 먼저 찾고, 자료가 없으면 다른 학기로 한 번 더 찾는다.
+    # 8월 개학처럼 학기가 바뀌는 시기에 설정을 고치지 않아도 시간표가 나오도록 한다.
+    first = int(neis_cfg['semester'])
+    rows = _timetable_rows(neis_cfg, api_key, ymd, first)
+    if not rows:
+        other = 2 if first == 1 else 1
+        rows = _timetable_rows(neis_cfg, api_key, ymd, other)
+        if rows:
+            print(f'  NEIS 시간표를 {other}학기 기준으로 찾았습니다(설정값은 {first}학기).')
     rows.sort(key=lambda r: int(r.get('PERIO') or 0))
     return [{'period': r.get('PERIO'), 'content': (r.get('ITRT_CNTNT') or '').strip()}
             for r in rows]
@@ -270,7 +282,7 @@ def section(name, icon, color, events, empty_msg):
 
 def render_timetable_section(timetable, dept_label):
     if not timetable:
-        body = f'<div class="empty">오늘 시간표 정보가 없습니다.</div>'
+        body = ('<div class="empty">NEIS에 등록된 오늘 시간표가 없습니다. 학교에서 시간표를 NEIS에 올리면 자동으로 표시됩니다.</div>')
     else:
         rows = []
         for t in timetable:
@@ -294,7 +306,7 @@ def render_timetable_section(timetable, dept_label):
 
 def render_meals_section(meals):
     if not meals:
-        body = f'<div class="empty">오늘 급식 정보가 없습니다.</div>'
+        body = ('<div class="empty">NEIS에 등록된 오늘 급식이 없습니다. 영양 담당 선생님이 식단을 NEIS에 올리면 자동으로 표시됩니다.</div>')
     else:
         items = []
         for m in meals:
