@@ -211,20 +211,25 @@ def _cards_block(data, today_iso):
             '<div class="wp-cards">%s</div>' % cards)
 
 
+def _strip(data):
+    """부서별 입력 현황. 계획 내용을 먼저 읽게 하려고 맨 아래에 둔다."""
+    out = ['<div class="wp-strip">',
+           _stat('이번 주 입력', data.get('thisWeek'), '이번 주 탭이 아직 없습니다.'),
+           _stat('다음 주 입력', data.get('nextWeek'), '다음 주 탭이 아직 없습니다.')]
+    for mon in data.get('months', []):
+        out.append(_stat('%s 사전 계획' % mon.get('label', ''), mon, ''))
+    out.append('</div>')
+    return ''.join(out)
+
+
 def _ssr(data):
     today = data.get('todayIso', '')
-    strip = ['<div class="wp-strip">',
-             _stat('이번 주 입력', data.get('thisWeek'), '이번 주 탭이 아직 없습니다.'),
-             _stat('다음 주 입력', data.get('nextWeek'), '다음 주 탭이 아직 없습니다.')]
-    for mon in data.get('months', []):
-        strip.append(_stat('%s 사전 계획' % mon.get('label', ''), mon, ''))
-    strip.append('</div>')
     body = ('<div class="wp-main">'
             + _major_block(data, today)
             + _notes_block(data)
             + _cards_block(data, today)
             + '</div>')
-    return ''.join(strip) + body
+    return body + _strip(data)
 
 
 # ------------------------------------------------------------------ 스타일
@@ -241,8 +246,8 @@ _CSS = """
   .wp-btn.wp-primary:hover{background:#000}
 
   .wp-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line-2);
-    border-bottom:1px solid var(--line-2)}
-  .wp-stat{background:#fff;padding:12px 20px 13px}
+    border-top:1px solid var(--line-2)}
+  .wp-stat{background:#fdfcfa;padding:12px 20px 13px}
   .wp-stat-top{display:flex;align-items:baseline;gap:9px;margin-bottom:9px}
   .wp-stat-title{font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.01em}
   .wp-count{font-family:var(--mono);font-size:17px;font-weight:600;line-height:1;margin-left:auto}
@@ -288,8 +293,11 @@ _CSS = """
     padding:9px 12px;font-size:12.5px;line-height:1.55}
   .wp-note b{display:block;margin-bottom:3px;color:var(--amber);font-size:11.5px;letter-spacing:.02em}
 
-  /* 부서별 계획: 부서 한 곳이 카드 한 장이고, 그 안에 두 주가 나란히 들어간다. */
-  .wp-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:stretch}
+  /* 부서별 계획: 부서 한 곳이 카드 한 장이고, 그 안에 두 주가 나란히 들어간다.
+     열 수를 고정하지 않고 카드가 읽히는 최소 너비로 정해야, 넓은 화면에서 부서 넷이
+     한 줄에 그대로 들어가고 좁아질 때에만 줄이 나뉜다. */
+  .wp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(288px,1fr));
+    gap:12px;align-items:stretch}
   .wp-card{border:1px solid var(--line);border-radius:12px;padding:11px 13px 12px;background:#fff;
     display:flex;flex-direction:column;min-width:0}
   .wp-card h4{margin:0 0 8px;font-size:12.5px;font-weight:700;letter-spacing:-.01em}
@@ -330,12 +338,10 @@ _CSS = """
     box-shadow:0 12px 34px rgba(19,27,36,.28)}
   .wp-toast.wp-show{opacity:1}
 
-  @media (max-width:1500px){.wp-cards{grid-template-columns:repeat(3,1fr)}}
   @media (max-width:1400px){
     .wp-strip{grid-template-columns:repeat(2,1fr)}
     .wp-formgrid{grid-template-columns:repeat(3,1fr)}
   }
-  @media (max-width:1180px){.wp-cards{grid-template-columns:repeat(2,1fr)}}
   @media (max-width:1100px){
     .wp-major{grid-template-columns:repeat(3,1fr)}
     .wp-rowhead{grid-column:1/-1;flex-direction:row;align-items:baseline;gap:9px}
@@ -345,7 +351,6 @@ _CSS = """
   @media (max-width:760px){
     .wp-strip{grid-template-columns:1fr}
     .wp-formgrid{grid-template-columns:repeat(2,1fr)}
-    .wp-cards{grid-template-columns:1fr}
   }
 </style>
 """
@@ -471,18 +476,19 @@ _JS = r"""
   }
   function renderAll(){
     var d=DATA,today=d.todayIso||'';
-    var h='<div class="wp-strip">';
+    var h='<div class="wp-main">'+majorBlock(d,today)+notesBlock(d)+cardsBlock(d,today)+'</div>';
+    h+='<div class="wp-strip">';
     h+=stat('이번 주 입력',d.thisWeek,'이번 주 탭이 아직 없습니다.');
     h+=stat('다음 주 입력',d.nextWeek,'다음 주 탭이 아직 없습니다.');
     (d.months||[]).forEach(function(m){h+=stat(m.label+' 사전 계획',m,'');});
-    h+='</div><div class="wp-main">'+majorBlock(d,today)+notesBlock(d)+cardsBlock(d,today)+'</div>';
+    h+='</div>';
     var c=byId('wpContent'); if(c)c.innerHTML=h;
     var b=byId('wpCount');
     if(b&&d.nextWeek){
       var t=(d.nextWeek.filled||[]).length+(d.nextWeek.missing||[]).length;
       b.textContent='다음 주 '+(d.nextWeek.filled||[]).length+'/'+t+' 부서';
     }
-    renderInput();
+    renderInput(true);
   }
   function toast(msg){
     var t=byId('wpToast'); if(!t)return;
@@ -494,8 +500,17 @@ _JS = r"""
     if(bi&&bi.style.display!==''){bi.style.display='';bi.onclick=togglePanel;}
     if(br&&br.style.display!==''){br.style.display='';br.onclick=function(){refresh(true);};}
   }
-  function refresh(manual){
+  /* 입력 창이 열려 있거나 글자를 적고 있으면 자동 갱신을 미룬다.
+     그러지 않으면 5분마다 화면을 다시 그리면서 적던 내용이 사라진다. */
+  function busy(){
+    var p=byId('wpPanel');
+    if(p&&p.className.indexOf('wp-open')>=0)return true;
+    var a=document.activeElement;
+    return !!(a&&(a.tagName==='TEXTAREA'||a.tagName==='INPUT'));
+  }
+  function refresh(manual,force){
     if(!API)return;
+    if(!manual&&!force&&busy())return;
     fetch(API+'?api=dashboard').then(function(r){return r.json();}).then(function(j){
       if(j&&j.thisWeek!==undefined){
         DATA=j;reveal();renderAll();
@@ -513,9 +528,12 @@ _JS = r"""
     p.className='wp-panel'+(open?'':' wp-open');
     if(!open){renderInput();p.scrollIntoView({behavior:'smooth',block:'nearest'});}
   }
-  function renderInput(){
+  function renderInput(keepFocus){
     var box=byId('wpPanelBody'),p=byId('wpPanel');
     if(!box||!p||p.className.indexOf('wp-open')<0)return;
+    /* 적고 있던 칸을 지우지 않으려면, 입력에 초점이 있을 때에는 다시 그리지 않는다. */
+    var a=document.activeElement;
+    if(keepFocus&&a&&box.contains(a))return;
     var depts=deptIndex();
     if(!depts.length){box.innerHTML='<div class="wp-muted">부서 목록을 불러오지 못했습니다. 시트에서 입력해 주세요.</div>';return;}
     var h='<div class="wp-pillrow">'
@@ -575,7 +593,7 @@ _JS = r"""
     (function next(){
       if(idx>=jobs.length){
         st.busy=false;
-        if(last){DATA=last;renderAll();}else{refresh(false);}
+        if(last){DATA=last;renderAll();}else{refresh(false,true);}
         toast(failed?('일부 저장에 실패했습니다: '+failed):'저장되었습니다. 노션에는 10분 안에 반영됩니다.');
         return;
       }
@@ -662,6 +680,7 @@ def build_section(api_url=None, timeout=45):
 
     script = (_JS
               .replace('__API_URL__', api_url.replace('\\', '\\\\').replace('"', '\\"'))
-              .replace('__DATA_JSON__', json.dumps(data, ensure_ascii=False)))
+              .replace('__DATA_JSON__',
+                       json.dumps(data, ensure_ascii=False).replace('</', '<\\/')))
     print('  [업무계획] 구역을 넣었습니다. (%s)' % count_label)
     return _CSS + body + script

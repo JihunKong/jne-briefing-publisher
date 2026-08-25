@@ -487,7 +487,8 @@ def render_month_panel(events):
 
 MEAL_SCRIPT = """
 <script>
-(function(){
+/* 급식 구역을 새 발행본으로 바꿔 끼운 뒤에도 다시 연결해야 하므로 이름을 붙여 둔다. */
+window.bindMealTabs=function(){
   var p=document.getElementById('mealPanel');
   if(!p)return;
   var tabs=p.querySelectorAll('.mtab'), panes=p.querySelectorAll('.mpane');
@@ -500,7 +501,8 @@ MEAL_SCRIPT = """
   for(var k=0;k<tabs.length;k++){
     (function(i){tabs[i].onclick=function(){show(i);};})(k);
   }
-})();
+};
+window.bindMealTabs();
 </script>
 """
 
@@ -518,13 +520,20 @@ def self_refresh_url():
 
 
 def build_auto_refresh(url, stamp):
-    """열려 있는 화면이 스스로 최신 발행본을 확인해 바꿔치기하도록 한다.
+    """열려 있는 화면이 스스로 최신 발행본을 확인해 바뀐 구역만 갈아 끼우도록 한다.
 
     배부한 프로그램은 실행할 때 한 번만 파일을 내려받기 때문에, 아침에 띄워 둔
     화면은 하루 종일 그대로 남는다. 이 스크립트가 있으면 프로그램을 다시 실행하지
-    않아도 발행 시각(06시, 13시)의 새 내용이 10분 안에 화면에 반영된다.
+    않아도 발행 시각(06시, 13시)의 새 내용이 화면에 반영된다.
 
-    발행 표식이 같으면 아무 일도 하지 않으므로 무한히 다시 그리지 않는다.
+    처음에는 document.write 로 문서 전체를 다시 썼는데, 그 방식에는 문제가 두 가지
+    있었다. 다시 쓰는 동안 화면이 잠깐 깨져 보였고, 열어 둔 입력 창과 적어 넣던
+    내용이 함께 사라졌다. 또 gist 를 나누어 맡은 서버끼리 응답이 어긋나면 두 판본을
+    번갈아 받아 끝없이 다시 쓰기도 했다.
+
+    그래서 지금은 세 가지를 지킨다. 발행 표식이 지금 화면보다 뒤일 때에만 바꾸고,
+    입력 창이 열려 있거나 글자를 적고 있는 동안에는 손대지 않으며, 문서를 버리지 않고
+    보조 영역과 날짜 표시처럼 실제로 바뀌는 자리만 갈아 끼운다.
     """
     if not url:
         return ''
@@ -533,15 +542,38 @@ def build_auto_refresh(url, stamp):
         '(function(){\n'
         '  var SRC=' + json.dumps(url) + ';\n'
         '  var MINE=' + json.dumps(stamp) + ';\n'
-        '  function stampOf(t){var m=t.match(/name="briefing-build" content="([^"]*)"/);return m?m[1]:"";}\n'
+        '  function busy(){\n'
+        '    var p=document.getElementById("wpPanel");\n'
+        '    if(p&&p.className.indexOf("wp-open")>=0)return true;\n'
+        '    var a=document.activeElement;\n'
+        '    return !!(a&&(a.tagName==="TEXTAREA"||a.tagName==="INPUT"));\n'
+        '  }\n'
+        '  function swap(doc){\n'
+        '    [".aux","footer",".daypill"].forEach(function(sel){\n'
+        '      var cur=document.querySelector(sel),nxt=doc.querySelector(sel);\n'
+        '      if(cur&&nxt)cur.innerHTML=nxt.innerHTML;\n'
+        '    });\n'
+        '    var btn=document.getElementById("wpBtnInput");\n'
+        '    var live=btn&&btn.style.display==="";\n'
+        '    if(!live){\n'
+        '      var c=document.getElementById("wpContent"),n=doc.getElementById("wpContent");\n'
+        '      if(c&&n)c.innerHTML=n.innerHTML;\n'
+        '    }\n'
+        '    if(doc.title)document.title=doc.title;\n'
+        '    if(window.bindMealTabs)window.bindMealTabs();\n'
+        '  }\n'
         '  function check(){\n'
-        '    if(!window.fetch)return;\n'
+        '    if(!window.fetch||!window.DOMParser||busy())return;\n'
         '    fetch(SRC,{cache:"no-store"}).then(function(r){return r.text();}).then(function(t){\n'
-        '      var s=stampOf(t);\n'
-        '      if(s&&s!==MINE&&t.length>500){document.open();document.write(t);document.close();}\n'
+        '      var m=t.match(/name="briefing-build" content="([^"]*)"/);\n'
+        '      var s=m?m[1]:"";\n'
+        '      if(!s||s<=MINE||t.length<500)return;\n'
+        '      var doc=new DOMParser().parseFromString(t,"text/html");\n'
+        '      if(!doc||!doc.querySelector(".aux"))return;\n'
+        '      swap(doc);MINE=s;\n'
         '    }).catch(function(){});\n'
         '  }\n'
-        '  function start(){check();setInterval(check,10*60*1000);}\n'
+        '  function start(){setTimeout(check,20000);setInterval(check,10*60*1000);}\n'
         '  if(document.readyState==="loading"){window.addEventListener("DOMContentLoaded",start);}\n'
         '  else{start();}\n'
         '})();\n'
