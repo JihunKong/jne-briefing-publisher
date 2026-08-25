@@ -562,16 +562,82 @@ window.bindMealTabs();
 """
 
 
-def self_refresh_url():
-    """게시된 briefing.html 의 주소. 저장소에 주소를 적지 않고 환경 변수로 만든다."""
+def gist_raw_url(filename):
+    """게시된 gist 파일의 주소. 저장소에 주소를 적지 않고 환경 변수로 만든다."""
     direct = os.environ.get('BRIEFING_SELF_URL')
     if direct:
         return direct.strip()
     owner = (os.environ.get('GITHUB_REPOSITORY_OWNER') or '').strip()
     gist_id = (os.environ.get('GIST_ID') or '').strip()
     if owner and gist_id:
-        return f'https://gist.githubusercontent.com/{owner}/{gist_id}/raw/briefing.html'
+        return f'https://gist.githubusercontent.com/{owner}/{gist_id}/raw/{filename}'
     return ''
+
+
+def self_refresh_url():
+    return gist_raw_url('dashboard.html')
+
+
+def render_loader(stamp, dashboard_url):
+    """선생님 PC에 저장되는 briefing.html 은 화면을 담지 않고 껍데기만 담는다.
+
+    프로그램은 실행할 때 이 파일을 한 번 내려받아 저장한다. 예전에는 이 파일에
+    화면 전체가 들어 있어서, 화면을 고칠 때마다 모든 PC에서 프로그램을 다시
+    실행해야 했다. 이제 이 파일은 최신 화면(dashboard.html)을 받아 오는 일만
+    하므로, 앞으로 화면을 고쳐도 프로그램을 다시 실행할 필요가 없다.
+
+    문서에 발행 표식을 함께 남겨 둔다. 예전 판본이 열려 있는 화면도 이 표식을
+    보고 스스로 이 껍데기로 바뀌므로, 그때부터는 최신 화면을 따라오게 된다.
+    """
+    if not dashboard_url:
+        return ''
+    return f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="briefing-build" content="{html.escape(stamp)}">
+<title>교무실 브리핑</title>
+<style>
+  html,body{{margin:0;height:100%%}}
+  body{{background:#f2efe9;color:#69737f;display:flex;align-items:center;justify-content:center;
+    font-family:'Pretendard','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',system-ui,sans-serif}}
+  .box{{text-align:center;font-size:15px;line-height:1.8;padding:24px}}
+  .box b{{display:block;font-size:18px;color:#131b24;margin-bottom:6px}}
+  .box.err{{color:#a95a08}}
+</style>
+</head>
+<body>
+<div class="box" id="msg"><b>교무실 브리핑</b>화면을 불러오는 중입니다…</div>
+<script>
+(function(){{
+  var SRC={json.dumps(dashboard_url)};
+  function fail(t){{
+    var m=document.getElementById('msg');
+    if(m){{m.className='box err';m.innerHTML='<b>브리핑을 불러오지 못했습니다</b>'+t;}}
+  }}
+  var KEY='jneBriefingCache';
+  function show(t){{document.open();document.write(t);document.close();}}
+  function cached(){{try{{return window.localStorage.getItem(KEY);}}catch(e){{return null;}}}}
+  function keep(t){{try{{window.localStorage.setItem(KEY,t);}}catch(e){{}}}}
+  if(!window.fetch){{fail('이 컴퓨터의 브라우저가 오래되었습니다. 크롬으로 열어 주세요.');return;}}
+  var url=SRC+(SRC.indexOf('?')<0?'?':'&')+'t='+(new Date()).getTime();
+  fetch(url,{{cache:'no-store'}}).then(function(r){{
+    if(!r.ok)throw new Error(r.status);
+    return r.text();
+  }}).then(function(t){{
+    if(!t||t.length<500)throw new Error('empty');
+    keep(t);show(t);
+  }}).catch(function(){{
+    /* 인터넷이 막혀 있으면 마지막으로 받아 둔 화면이라도 보여 준다. */
+    var old=cached();
+    if(old&&old.length>500){{show(old);return;}}
+    fail('인터넷 연결을 확인하신 뒤 F5 를 눌러 다시 시도해 주세요.');
+  }});
+}})();
+</script>
+</body></html>
+"""
 
 
 def build_auto_refresh(url, stamp):
@@ -777,10 +843,17 @@ def main():
     }
     json_str = json.dumps(json_payload, ensure_ascii=False, indent=2)
 
-    upload_to_gist(gist_token, gist_id, {
-        'briefing.html': html_str,
+    dashboard_url = self_refresh_url()
+    files = {
+        # 프로그램이 내려받는 파일. 최신 화면을 받아 오는 껍데기만 담는다.
+        'briefing.html': render_loader(generated_at, dashboard_url) or html_str,
+        # 실제 화면. 앞으로 이 파일만 바꾸면 모든 PC에 그대로 반영된다.
+        'dashboard.html': html_str,
         'briefing.json': json_str,
-    })
+    }
+    if not dashboard_url:
+        print('  [주의] gist 주소를 만들 수 없어 예전 방식으로 briefing.html 에 화면을 그대로 실었습니다.')
+    upload_to_gist(gist_token, gist_id, files)
     print(f'  gist 업로드 완료: https://gist.github.com/{gist_id}')
 
 
