@@ -796,7 +796,7 @@ function syncMonth_(ctx, y, m) {
   var cal = null;
   if (monthSheet) {
     try { refreshMonthCalendarSheet_(ctx, monthSheet, y, m); } catch (eCal) { }
-    cal = parseMonthlyCalendar(normalizeGrid_(ctx.ss, monthSheet), y, m);
+    try { cal = parseMonthlyCalendar(normalizeGrid_(ctx.ss, monthSheet), y, m); } catch (eCal2) { }
   }
 
   var pageIds = {};
@@ -1956,7 +1956,8 @@ function buildDashboardData_() {
   function monthOf(y, m) {
     var sh = findMonthSheetByYm_(ss, y, m);
     if (!sh) return null;
-    var cal = parseMonthlyCalendar(normalizeGrid_(ss, sh), y, m);
+    var cal = null;
+    try { cal = parseMonthlyCalendar(normalizeGrid_(ss, sh), y, m); } catch (eCal) { }
     return monthPayload(y, m, cal, {
       tabUrl: sheetUrlOf_(ss, sh),
       notionPageUrl: notionPageUrlFor_('M' + y + '-' + pad2(m))

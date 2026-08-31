@@ -103,9 +103,6 @@ def _dept_index(data):
 
     take(data.get('thisWeek'))
     take(data.get('nextWeek'))
-    if not order:
-        for mon in data.get('months', []):
-            take(mon)
     return [seen[nm] for nm in order]
 
 
@@ -222,8 +219,6 @@ def _strip_inner(data):
     """부서별 입력 현황. 계획 내용을 먼저 읽게 하려고 맨 아래에 둔다."""
     out = [_stat('이번 주 입력', data.get('thisWeek'), '이번 주 탭이 아직 없습니다.'),
            _stat('다음 주 입력', data.get('nextWeek'), '다음 주 탭이 아직 없습니다.')]
-    for mon in data.get('months', []):
-        out.append(_stat('%s 사전 계획' % mon.get('label', ''), mon, ''))
     return ''.join(out)
 
 
@@ -255,6 +250,69 @@ def _notice_block(data):
             + '</div>')
 
 
+# ------------------------------------------------------------------ 월중 행사
+
+def _cal_table(mon, today_iso):
+    """한 달치 달력 표. 일~토 일곱 칸에 그 날의 행사를 싣는다."""
+    dow = mon.get('dow') or ['일', '월', '화', '수', '목', '금', '토']
+    head = ''.join('<th class="%s">%s</th>'
+                   % ('c-sun' if i == 0 else ('c-sat' if i == 6 else ''), _esc(d))
+                   for i, d in enumerate(dow))
+    body = []
+    for week in mon.get('weeks', []):
+        tds = []
+        for i, cell in enumerate(week):
+            if not cell.get('d'):
+                tds.append('<td class="c-off"></td>')
+                continue
+            cls = ['c-sun'] if i == 0 else (['c-sat'] if i == 6 else [])
+            if cell.get('iso') == today_iso:
+                cls.append('c-today')
+            evs = ''.join('<div class="c-ev">%s</div>' % _esc(x)
+                          for x in cell.get('items', []))
+            tds.append('<td class="%s"><span class="c-d">%d</span>%s</td>'
+                       % (' '.join(cls), cell['d'], evs))
+        body.append('<tr>%s</tr>' % ''.join(tds))
+    if not body:
+        return '<div class="wp-muted">이 달의 달력 탭이 아직 없습니다.</div>'
+    return ('<table class="wp-cal"><thead><tr>%s</tr></thead>'
+            '<tbody>%s</tbody></table>' % (head, ''.join(body)))
+
+
+def _cal_one(mon, today_iso):
+    links = []
+    if mon.get('tabUrl'):
+        links.append('<a class="wp-btn" href="%s" target="_blank" rel="noopener">시트</a>'
+                     % _esc(mon['tabUrl']))
+    if mon.get('notionPageUrl'):
+        links.append('<a class="wp-btn" href="%s" target="_blank" rel="noopener">노션</a>'
+                     % _esc(mon['notionPageUrl']))
+    notes = ''
+    if mon.get('notes'):
+        notes = ('<div class="c-notes"><b>월간 전달사항</b>%s</div>'
+                 % ''.join('<div>%s</div>' % _esc(x)
+                           for x in str(mon['notes']).split('\n') if x.strip()))
+    return ('<section class="wp-calwrap"><div class="wp-calhead">'
+            '<b>%s 월중 행사 계획</b><span class="c-cnt">행사 %d건</span>'
+            '<span class="sp"></span>%s</div>%s%s</section>'
+            % (_esc(mon.get('label', '')), int(mon.get('count') or 0),
+               ''.join(links), _cal_table(mon, today_iso), notes))
+
+
+def _month_modal(data):
+    months = data.get('months', [])
+    today = data.get('todayIso', '')
+    inner = (''.join(_cal_one(m, today) for m in months)
+             or '<div class="wp-muted">월중 행사 달력 탭을 아직 만들지 않았습니다.</div>')
+    return ('<div class="wp-modal" id="wpMonthModal">'
+            '<div class="wp-modal-box wp-modal-wide">'
+            '<div class="wp-modal-head"><b>월중 행사 계획</b>'
+            '<span class="sp"></span>'
+            '<span class="wp-btn" id="wpMonthClose">닫기</span></div>'
+            '<div class="wp-monthbody" id="wpMonthBlk">%s</div>'
+            '</div></div>' % inner)
+
+
 def _stat_modal(data):
     return ('<div class="wp-modal" id="wpStatModal">'
             '<div class="wp-modal-box">'
@@ -277,9 +335,10 @@ def _ssr(data):
             '<div id="wpNotesBlk">%s</div>'
             '<div id="wpCardsBlk">%s</div>'
             '<div id="wpNoticeBlk">%s</div>'
-            '</div>%s'
+            '</div>%s%s'
             % (_major_block(data, today), _notes_block(data),
-               _cards_block(data, today), _notice_block(data), _stat_modal(data)))
+               _cards_block(data, today), _notice_block(data),
+               _stat_modal(data), _month_modal(data)))
 
 
 # ------------------------------------------------------------------ 스타일
@@ -392,6 +451,28 @@ _CSS = """
     width:min(980px,94vw);max-height:82vh;overflow:auto;padding:18px 20px 20px}
   .wp-modal-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
   .wp-modal-head b{font-size:16px;letter-spacing:-.01em}
+  .wp-modal-wide{width:min(1180px,96vw)}
+  .wp-monthbody{display:flex;flex-direction:column;gap:20px}
+  .wp-calwrap{min-width:0}
+  .wp-calhead{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+  .wp-calhead b{font-size:15px}
+  .wp-calhead .c-cnt{font-size:12px;color:var(--muted);background:#f2efe9;
+    border-radius:20px;padding:3px 10px}
+  .wp-cal{width:100%;border-collapse:collapse;table-layout:fixed;font-family:var(--sans)}
+  .wp-cal th{font-size:12.5px;font-weight:700;color:#5c6673;background:#f2f4f7;
+    border:1px solid var(--line);padding:5px 0}
+  .wp-cal th.c-sun,.wp-cal td.c-sun .c-d{color:#b0453a}
+  .wp-cal th.c-sat,.wp-cal td.c-sat .c-d{color:#3a5f8a}
+  .wp-cal td{border:1px solid var(--line);vertical-align:top;height:78px;
+    padding:4px 6px 6px;background:#fff}
+  .wp-cal td.c-off{background:#faf9f6}
+  .wp-cal td.c-today{background:#f2f6fb;box-shadow:inset 0 0 0 2px #c3d5ea}
+  .wp-cal .c-d{display:block;font-size:11.5px;font-weight:700;color:#7d8794;margin-bottom:3px}
+  .wp-cal .c-ev{font-size:12px;line-height:1.35;color:var(--text);margin-bottom:2px;
+    word-break:break-word}
+  .c-notes{margin-top:9px;font-size:12.5px;color:#6d6558;background:#fbfaf7;
+    border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  .c-notes b{display:block;font-size:12px;color:#8a8172;margin-bottom:3px}
 
   .wp-panel{display:none;border-top:1px solid var(--line-2);background:#fbfaf7;padding:18px 22px 22px}
   .wp-panel.wp-open{display:block}
@@ -488,7 +569,6 @@ _JS = r"""
       });
     }
     take(DATA.thisWeek);take(DATA.nextWeek);
-    if(!order.length)(DATA.months||[]).forEach(take);
     return order.map(function(nm){return seen[nm];});
   }
 
@@ -566,7 +646,6 @@ _JS = r"""
   function stripInner(d){
     var h=stat('이번 주 입력',d.thisWeek,'이번 주 탭이 아직 없습니다.');
     h+=stat('다음 주 입력',d.nextWeek,'다음 주 탭이 아직 없습니다.');
-    (d.months||[]).forEach(function(m){h+=stat(m.label+' 사전 계획',m,'');});
     return h;
   }
   /* 새 내용을 먼저 문자열로 만들어 두고, 지금 화면과 다를 때에만 갈아 끼운다.
@@ -626,6 +705,7 @@ _JS = r"""
     }
     put('wpNoticeBlk',noticeBlock(d));
     put('wpStripBlk',stripInner(d));
+    put('wpMonthBlk',monthInner(d));
     renderInput(true);
   }
   function toast(msg){
@@ -660,6 +740,56 @@ _JS = r"""
   }
 
   function weekObj(which){return which==='this'?DATA.thisWeek:DATA.nextWeek;}
+  function calTable(m,today){
+    var dow=m.dow||['일','월','화','수','목','금','토'],head='';
+    dow.forEach(function(x,i){
+      head+='<th class="'+(i===0?'c-sun':(i===6?'c-sat':''))+'">'+esc(x)+'</th>';
+    });
+    var body='';
+    (m.weeks||[]).forEach(function(wk){
+      var tds='';
+      wk.forEach(function(cell,i){
+        if(!cell.d){tds+='<td class="c-off"></td>';return;}
+        var cls=i===0?'c-sun':(i===6?'c-sat':'');
+        if(cell.iso===today)cls+=' c-today';
+        var evs='';
+        (cell.items||[]).forEach(function(x){evs+='<div class="c-ev">'+esc(x)+'</div>';});
+        tds+='<td class="'+cls+'"><span class="c-d">'+cell.d+'</span>'+evs+'</td>';
+      });
+      body+='<tr>'+tds+'</tr>';
+    });
+    if(!body)return '<div class="wp-muted">이 달의 달력 탭이 아직 없습니다.</div>';
+    return '<table class="wp-cal"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>';
+  }
+  function calOne(m,today){
+    var links='';
+    if(m.tabUrl)links+='<a class="wp-btn" href="'+esc(m.tabUrl)+'" target="_blank" rel="noopener">시트</a>';
+    if(m.notionPageUrl)links+='<a class="wp-btn" href="'+esc(m.notionPageUrl)+'" target="_blank" rel="noopener">노션</a>';
+    var notes='';
+    if(m.notes){
+      var ln='';
+      String(m.notes).split('\n').forEach(function(x){if(x.trim())ln+='<div>'+esc(x)+'</div>';});
+      if(ln)notes='<div class="c-notes"><b>월간 전달사항</b>'+ln+'</div>';
+    }
+    return '<section class="wp-calwrap"><div class="wp-calhead"><b>'+esc(m.label||'')
+      +' 월중 행사 계획</b><span class="c-cnt">행사 '+(m.count||0)+'건</span>'
+      +'<span class="sp"></span>'+links+'</div>'+calTable(m,today)+notes+'</section>';
+  }
+  function monthInner(d){
+    var today=d.todayIso||'',h='';
+    (d.months||[]).forEach(function(m){h+=calOne(m,today);});
+    return h||'<div class="wp-muted">월중 행사 달력 탭을 아직 만들지 않았습니다.</div>';
+  }
+  function bindMonthModal(){
+    var b=byId('wpBtnMonth'),m=byId('wpMonthModal'),x=byId('wpMonthClose');
+    if(!b||!m)return;
+    b.onclick=function(){m.className='wp-modal wp-open';};
+    if(x)x.onclick=function(){m.className='wp-modal';};
+    m.onclick=function(e){if(e.target===m)m.className='wp-modal';};
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape')m.className='wp-modal';
+    });
+  }
   function bindStatModal(){
     var b=byId('wpBtnStat'),m=byId('wpStatModal'),x=byId('wpStatClose');
     if(!b||!m)return;
@@ -772,6 +902,7 @@ _JS = r"""
   function init(){
     /* 입력 현황 팝업은 API 없이도 열려야 하므로 먼저 연결한다. */
     bindStatModal();
+    bindMonthModal();
     if(!API||!window.fetch)return;
     /* 예전 문서에서 이미 보낸 요청이 뒤늦게 돌아와 화면을 덮어쓸 수 있으므로,
        처음 얼마 동안은 몇 번 더 제 모습을 확인한다. */
@@ -831,7 +962,8 @@ def build_section(api_url=None, timeout=45):
     total = done + len(nw.get('missing', []))
     count_label = ('다음 주 %d/%d 부서' % (done, total)) if nw else '자료 없음'
 
-    links = ['<span class="wp-btn" id="wpBtnStat">입력 현황 보기</span>',
+    links = ['<span class="wp-btn" id="wpBtnMonth">월중 행사 계획</span>',
+             '<span class="wp-btn" id="wpBtnStat">입력 현황 보기</span>',
              '<span class="wp-btn wp-primary" id="wpBtnInput" style="display:none">여기서 바로 입력</span>',
              '<span class="wp-btn" id="wpBtnRefresh" style="display:none">새로 고침</span>']
     if data.get('sheetUrl'):
