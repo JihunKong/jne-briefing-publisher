@@ -142,7 +142,27 @@ def week_card(title, week, today_iso):
             f'{note_html}{week_items_html(week, today_iso)}</section>')
 
 
+def calendar_card(mon):
+    days = mon.get("dow") or ["일", "월", "화", "수", "목", "금", "토"]
+    head = "".join(f"<th>{esc(day)}</th>" for day in days)
+    rows = []
+    for week in mon.get("weeks", []):
+        cells = []
+        for day in week:
+            items = "".join(f"<div>{esc(item)}</div>" for item in day.get("items", []))
+            cells.append(f'<td><b>{esc(day.get("d") or "")}</b>{items}</td>')
+        rows.append(f'<tr>{"".join(cells)}</tr>')
+    body = (f'<div class="scroll-x"><table class="mini-table calendar"><tr>{head}</tr>'
+            f'{"".join(rows)}</table></div>' if rows else
+            '<div class="muted">이 달의 달력 탭이 아직 없습니다.</div>')
+    notes = f'<div class="notes">{nl2br(mon["notes"])}</div>' if mon.get("notes") else ""
+    return (f'<details class="card"><summary><h2 style="display:inline">'
+            f'{esc(mon.get("label", ""))} 월중 행사 계획</h2></summary>{body}{notes}</details>')
+
+
 def month_card(mon):
+    if "weekRanges" not in mon:
+        return calendar_card(mon)
     head = "".join(f"<th>{esc(w)}</th>" for w in mon["weekRanges"])
     body = []
     for d in mon["depts"]:
@@ -169,7 +189,8 @@ def render_ssr(data):
     parts.append(status_card("이번 주 입력 현황", data.get("thisWeek"), "이번 주 탭이 아직 없습니다"))
     parts.append(status_card("다음 주 입력 현황", data.get("nextWeek"), "다음 주 탭이 아직 없습니다"))
     for mon in data.get("months", []):
-        parts.append(status_card(f'{mon["label"]} 월간 사전 계획', mon, ""))
+        if "weekRanges" in mon:
+            parts.append(status_card(f'{mon["label"]} 월간 사전 계획', mon, ""))
     parts.append("</div>")
     parts.append(week_card("📌 이번 주 할 일", data.get("thisWeek"), today))
     parts.append(week_card("⏭️ 다음 주 할 일", data.get("nextWeek"), today))
@@ -190,6 +211,8 @@ TEMPLATE = r"""<!DOCTYPE html>
 :root{--grad1:#667eea;--grad2:#764ba2;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;
 --ok:#15803d;--okbg:#ecfdf5;--bad:#b91c1c;--badbg:#fef2f2;--amber:#b45309;--amberbg:#fffbeb;}
 *{box-sizing:border-box}
+.calendar{min-width:630px;table-layout:fixed;width:100%}
+.calendar td{vertical-align:top;overflow-wrap:anywhere}
 body{margin:0;font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;
 background:#f3f4f6;color:var(--ink);line-height:1.55}
 .wrap{max-width:1080px;margin:0 auto;padding:14px 14px 60px}
@@ -340,7 +363,20 @@ function weekCard(title,w,today){
   return '<section class="card"><h2>'+esc(title)+' <small>'+esc(w.label)+' · '+esc(w.range)+'</small><span class="links">'+links+'</span></h2>'
     +notes+weekItems(w,today)+'</section>';
 }
+function calendarCard(m){
+  var head=(m.dow||['일','월','화','수','목','금','토']).map(function(d){return '<th>'+esc(d)+'</th>';}).join('');
+  var rows=(m.weeks||[]).map(function(w){
+    return '<tr>'+w.map(function(d){
+      return '<td><b>'+esc(d.d||'')+'</b>'+(d.items||[]).map(function(x){return '<div>'+esc(x)+'</div>';}).join('')+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
+  var body=rows?'<div class="scroll-x"><table class="mini-table calendar"><tr>'+head+'</tr>'+rows+'</table></div>'
+    :'<div class="muted">이 달의 달력 탭이 아직 없습니다.</div>';
+  var notes=m.notes?'<div class="notes">'+nl2br(m.notes)+'</div>':'';
+  return '<details class="card"><summary><h2 style="display:inline">'+esc(m.label||'')+' 월중 행사 계획</h2></summary>'+body+notes+'</details>';
+}
 function monthCard(m){
+  if(!Array.isArray(m.weekRanges))return calendarCard(m);
   var head='';m.weekRanges.forEach(function(x){head+='<th>'+esc(x)+'</th>';});
   var body='';
   (m.depts||[]).forEach(function(d){
@@ -360,7 +396,7 @@ function renderAll(){
   var h='<div class="stats">';
   h+=statCard('이번 주 입력 현황',d.thisWeek,'이번 주 탭이 아직 없습니다');
   h+=statCard('다음 주 입력 현황',d.nextWeek,'다음 주 탭이 아직 없습니다');
-  (d.months||[]).forEach(function(m){h+=statCard(m.label+' 월간 사전 계획',m,'');});
+  (d.months||[]).forEach(function(m){if(Array.isArray(m.weekRanges))h+=statCard(m.label+' 월간 사전 계획',m,'');});
   h+='</div>';
   h+=weekCard('📌 이번 주 할 일',d.thisWeek,today);
   h+=weekCard('⏭️ 다음 주 할 일',d.nextWeek,today);
@@ -379,7 +415,7 @@ function setSub(extra){
 }
 function refresh(manual){
   if(!API){return;}
-  fetch(API+'?api=dashboard').then(function(r){return r.json();}).then(function(j){
+  fetch(API+(API.indexOf('?')===-1?'?':'&')+'api=dashboard').then(function(r){return r.json();}).then(function(j){
     if(j&&j.ok!==false&&j.thisWeek!==undefined){
       DATA=j;renderAll();
       setSub('실시간 자료 ('+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 기준)');
@@ -393,7 +429,8 @@ function weekObj(which){return which==='this'?DATA.thisWeek:DATA.nextWeek;}
 function deptSource(){
   var w=weekObj(st.week)||weekObj(st.week==='this'?'next':'this');
   if(w&&w.depts&&w.depts.length)return w.depts;
-  if(DATA.months&&DATA.months.length&&DATA.months[0].depts.length)return DATA.months[0].depts;
+  var months=DATA.months||[];
+  for(var i=0;i<months.length;i++){if(months[i].depts&&months[i].depts.length)return months[i].depts;}
   return [];
 }
 function togglePanel(){

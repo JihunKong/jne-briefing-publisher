@@ -22,6 +22,9 @@ jobs:
       - name: 의존성 설치
         run: pip install requests
 
+      - name: 월간 데이터 형식 회귀 검사
+        run: python -m unittest -v test_workplan_publish
+
       - name: 대시보드 렌더링과 gist 게시
         env:
           WORKPLAN_API_URL: ${{ secrets.WORKPLAN_API_URL }}
