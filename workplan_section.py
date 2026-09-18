@@ -64,6 +64,17 @@ def _day_label(week, i):
     return '토~일 %s~%s' % (_md(week['dates'][5]), _md(week['dates'][6]))
 
 
+def _day_chip(week, i):
+    """카드 왼쪽에 놓을 짧은 날짜 딱지. 예) 9/15(월), 9/19~20"""
+    dates = (week or {}).get('dates', [])
+    if len(dates) < 7:
+        return DAY_KO[i] if i < 5 else '주말'
+    if i < 5:
+        return '%s(%s)' % (_md(dates[i]), DAY_KO[i])
+    a, b = _md(dates[5]), _md(dates[6])
+    return '%s~%s' % (a, b.split('/')[1] if a.split('/')[0] == b.split('/')[0] else b)
+
+
 def _is_today(week, i, today_iso):
     dates = (week or {}).get('dates', [])
     if not dates:
@@ -177,7 +188,8 @@ def _notes_block(data):
 
 # ------------------------------------------------------------------ 부서별 계획
 
-def _card_week(label, week, dept_name, today_iso):
+def _card_week(week, dept_name, today_iso, cls):
+    """한 주치 줄 묶음. 적은 내용이 없으면 빈 문자열을 돌려준다."""
     groups = []
     dept = _find_dept(week, dept_name)
     if week and dept:
@@ -186,23 +198,28 @@ def _card_week(label, week, dept_name, today_iso):
             if not lines:
                 continue
             chip = 'wp-dchip is-today' if _is_today(week, i, today_iso) else 'wp-dchip'
-            day = DAY_KO[i] if i < 5 else '주말'
             groups.append('<div class="wp-dgroup"><span class="%s">%s</span>'
                           '<div class="wp-lines">%s</div></div>'
-                          % (chip, _esc(day),
+                          % (chip, _esc(_day_chip(week, i)),
                              ''.join('<div>%s</div>' % _esc(x) for x in lines)))
-    body = ''.join(groups) or '<div class="wp-cnone">아직 입력하지 않았습니다.</div>'
-    return ('<div class="wp-cwk"><span class="wp-clabel">%s</span>'
-            '<div class="wp-cbody">%s</div></div>' % (_esc(label), body))
+    if not groups:
+        return ''
+    return '<div class="wp-cwk %s">%s</div>' % (cls, ''.join(groups))
 
 
 def _dept_card(dept, idx, data, today_iso):
-    """부서가 많이 적어도 카드가 아래로 늘어지지 않도록 안쪽만 스크롤되게 한다."""
+    """부서가 많이 적어도 카드가 아래로 늘어지지 않도록 안쪽만 스크롤되게 한다.
+
+    '이번 주·다음 주' 딱지를 빼고 날짜와 요일을 바로 적는다. 두 주는 가로선과
+    글자색으로 구분하므로, 딱지가 차지하던 자리는 내용에 내어 준다.
+    """
+    inner = (_card_week(data.get('thisWeek'), dept['name'], today_iso, 'is-this')
+             + _card_week(data.get('nextWeek'), dept['name'], today_iso, 'is-next'))
+    if not inner:
+        inner = '<div class="wp-cnone">아직 입력하지 않았습니다.</div>'
     return ('<div class="wp-card" data-dept="%s"><h4 style="color:%s">%s</h4>'
-            '<div class="wp-cscroll">%s%s</div></div>'
-            % (_esc(dept['name']), _tone(idx), _esc(dept['short']),
-               _card_week('이번 주', data.get('thisWeek'), dept['name'], today_iso),
-               _card_week('다음 주', data.get('nextWeek'), dept['name'], today_iso)))
+            '<div class="wp-cscroll">%s</div></div>'
+            % (_esc(dept['name']), _tone(idx), _esc(dept['short']), inner))
 
 
 def _cards_block(data, today_iso):
@@ -211,7 +228,7 @@ def _cards_block(data, today_iso):
         return ('<div class="wp-sub">부서별 계획</div>'
                 '<div class="wp-empty">부서 목록을 불러오지 못했습니다.</div>')
     cards = ''.join(_dept_card(d, i, data, today_iso) for i, d in enumerate(depts))
-    return ('<div class="wp-sub">부서별 계획 <em>부서마다 이번 주와 다음 주를 함께 봅니다</em></div>'
+    return ('<div class="wp-sub">부서별 계획 <em>이번 주에 이어 다음 주를 함께 봅니다. 바탕색이 깔린 칸이 다음 주입니다</em></div>'
             '<div class="wp-cards">%s</div>' % cards)
 
 
@@ -230,10 +247,9 @@ def _notice_one(week, name, title, cls, today_iso):
         if not lines:
             continue
         chip = 'wp-dchip is-today' if _is_today(week, i, today_iso) else 'wp-dchip'
-        label = DAY_KO[i] if i < 5 else '주말'
         rows.append('<div class="wp-dgroup"><span class="%s">%s</span>'
                     '<div class="wp-lines">%s</div></div>'
-                    % (chip, _esc(label),
+                    % (chip, _esc(_day_chip(week, i)),
                        ''.join('<div>%s</div>' % _esc(x) for x in lines)))
     body = ''.join(rows) or '<div class="nb-empty">이번 주에 등록된 전달사항이 없습니다.</div>'
     return ('<section class="nt %s"><h5>%s</h5>'
@@ -418,16 +434,17 @@ _CSS = """
   .wp-cscroll::-webkit-scrollbar{width:8px}
   .wp-cscroll::-webkit-scrollbar-thumb{background:#cfc7b8;border-radius:8px}
   .wp-cscroll::-webkit-scrollbar-track{background:transparent}
-  .wp-cwk{display:grid;grid-template-columns:52px 1fr;gap:9px;padding:6px 0;
-    border-top:1px dotted var(--line)}
-  .wp-cwk:first-of-type{border-top:0;padding-top:0}
-  .wp-clabel{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--faint);
-    letter-spacing:.02em;padding-top:2px}
-  .wp-cbody{min-width:0}
+  /* 앞이 이번 주, 뒤가 다음 주이다. 다음 주는 옅은 바탕 상자로 감싸 구분한다. */
+  .wp-cwk{padding:4px 0}
+  .wp-cwk:first-child{padding-top:0}
+  .wp-cwk.is-next{background:#f7f6f1;border:1px solid #edeae1;border-radius:9px;
+    padding:6px 7px;margin:7px -6px 0 -7px}
   .wp-cnone{font-size:13px;color:#c2bbad}
-  .wp-dgroup{display:grid;grid-template-columns:34px 1fr;gap:8px;padding:2px 0}
-  .wp-dchip{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--muted);padding-top:2px}
+  .wp-dgroup{display:grid;grid-template-columns:70px 1fr;gap:9px;padding:2px 0}
+  .wp-dchip{font-family:var(--mono);font-size:12px;font-weight:700;color:#4f5763;
+    letter-spacing:-.02em;padding-top:2px;white-space:nowrap}
   .wp-dchip.is-today{color:var(--today)}
+  .wp-cwk.is-next .wp-dchip{color:#7d8794}
   .wp-lines{font-size:14.5px;line-height:1.55;color:#2b3542;word-break:break-word;min-width:0}
 
   /* 행정실·교장·교감 전달사항. 두세 줄이 넘으면 칸 안에서만 스크롤한다. */
@@ -538,6 +555,14 @@ _JS = r"""
   function nl2br(s){return esc(s).replace(/\n/g,'<br>');}
   function md(iso){var p=String(iso).split('-');return (+p[1])+'/'+(+p[2]);}
   function dayLabel(w,i){return i<5?DAY_KO[i]+' '+md(w.dates[i]):'토~일 '+md(w.dates[5])+'~'+md(w.dates[6]);}
+  /* 카드 왼쪽에 놓을 짧은 날짜 딱지. 예) 9/15(월), 9/19~20 */
+  function dayChip(w,i){
+    var ds=(w||{}).dates||[];
+    if(ds.length<7)return i<5?DAY_KO[i]:'주말';
+    if(i<5)return md(ds[i])+'('+DAY_KO[i]+')';
+    var a=md(ds[5]),b=md(ds[6]);
+    return a+'~'+(a.split('/')[0]===b.split('/')[0]?b.split('/')[1]:b);
+  }
   function byId(id){return document.getElementById(id);}
   function tone(i){return TONES[i%TONES.length];}
 
@@ -613,7 +638,7 @@ _JS = r"""
     });
     return items?('<div class="wp-notes">'+items+'</div>'):'';
   }
-  function cardWeek(label,w,name,today){
+  function cardWeek(w,name,today,cls){
     var groups='',dept=findDept(w,name);
     if(w&&dept){
       for(var i=0;i<6;i++){
@@ -622,12 +647,11 @@ _JS = r"""
         var body='';
         ls.forEach(function(x){body+='<div>'+esc(x)+'</div>';});
         groups+='<div class="wp-dgroup"><span class="'+(isToday(w,i,today)?'wp-dchip is-today':'wp-dchip')+'">'
-          +esc(i<5?DAY_KO[i]:'주말')+'</span><div class="wp-lines">'+body+'</div></div>';
+          +esc(dayChip(w,i))+'</span><div class="wp-lines">'+body+'</div></div>';
       }
     }
-    if(!groups)groups='<div class="wp-cnone">아직 입력하지 않았습니다.</div>';
-    return '<div class="wp-cwk"><span class="wp-clabel">'+esc(label)+'</span>'
-      +'<div class="wp-cbody">'+groups+'</div></div>';
+    if(!groups)return '';
+    return '<div class="wp-cwk '+cls+'">'+groups+'</div>';
   }
   function cardsBlock(d,today){
     var depts=deptIndex();
@@ -635,12 +659,12 @@ _JS = r"""
       +'<div class="wp-empty">부서 목록을 불러오지 못했습니다.</div>';
     var cards='';
     depts.forEach(function(dp,i){
+      var inner=cardWeek(d.thisWeek,dp.name,today,'is-this')+cardWeek(d.nextWeek,dp.name,today,'is-next');
+      if(!inner)inner='<div class="wp-cnone">아직 입력하지 않았습니다.</div>';
       cards+='<div class="wp-card" data-dept="'+esc(dp.name)+'"><h4 style="color:'+tone(i)+'">'+esc(dp.short)+'</h4>'
-        +'<div class="wp-cscroll">'
-        +cardWeek('이번 주',d.thisWeek,dp.name,today)
-        +cardWeek('다음 주',d.nextWeek,dp.name,today)+'</div></div>';
+        +'<div class="wp-cscroll">'+inner+'</div></div>';
     });
-    return '<div class="wp-sub">부서별 계획 <em>부서마다 이번 주와 다음 주를 함께 봅니다</em></div>'
+    return '<div class="wp-sub">부서별 계획 <em>이번 주에 이어 다음 주를 함께 봅니다. 바탕색이 깔린 칸이 다음 주입니다</em></div>'
       +'<div class="wp-cards">'+cards+'</div>';
   }
   function stripInner(d){
@@ -676,7 +700,7 @@ _JS = r"""
       var body='';
       ls.forEach(function(x){body+='<div>'+esc(x)+'</div>';});
       rows+='<div class="wp-dgroup"><span class="'+(isToday(w,i,today)?'wp-dchip is-today':'wp-dchip')+'">'
-        +esc(i<5?DAY_KO[i]:'주말')+'</span><div class="wp-lines">'+body+'</div></div>';
+        +esc(dayChip(w,i))+'</span><div class="wp-lines">'+body+'</div></div>';
     }
     if(!rows)rows='<div class="nb-empty">이번 주에 등록된 전달사항이 없습니다.</div>';
     return '<section class="nt '+cls+'"><h5>'+esc(title)+'</h5><div class="nb">'+rows+'</div></section>';
