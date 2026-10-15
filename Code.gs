@@ -12,6 +12,8 @@
  *   5. [③ 연결 테스트]로 확인한 뒤 [④ 자동 전송 켜기]를 실행하면 설치가 끝납니다.
  *
  * ■ 버전
+ *   2026-10-01-a: 부서 이름 '교육정보'를 '연구정보'로 바꾸고,
+ *                 이미 만들어 둔 주간 탭의 줄 이름도 한 번에 고친다.
  *   2026-08-31-a: 월간 탭을 '월중 행사 계획' 달력(일~토 7열)으로 바꾸고,
  *                 노션 학사일정 달력과 날짜 단위로 양방향 동기화한다.
  *   2026-08-24-e: 노션 '학사일정' 달력과 주간 탭 '주요일정' 행의 양방향 동기화.
@@ -46,7 +48,7 @@ var CONFIG = {
   MONTH_TITLE: '월중 행사 계획',
   MONTH_TITLE_OLD: '월간 업무 계획',
   MARKER: '✍️ 메모·의견',
-  DEPTS: ['주요일정', '교무기획', '교육정보', '특성화', '학생자치인권\n(보건,상담,급식)', '행정실', '교장·교감'],
+  DEPTS: ['주요일정', '교무기획', '연구정보', '특성화', '학생자치인권\n(보건,상담,급식)', '행정실', '교장·교감'],
   DAY_LABELS: ['월', '화', '수', '목', '금', '토~일'],
   CAL_DOW: ['일', '월', '화', '수', '목', '금', '토'],
   CAL_WEEKS: 6,
@@ -79,6 +81,7 @@ function onOpen() {
     .addSeparator()
     .addItem('월중 행사 계획 PDF 내려받기', 'monthCalendarPdfMenu')
     .addItem('월중 행사 달력 양식 다시 만들기', 'rebuildMonthCalendarMenu')
+    .addItem('바뀐 부서 이름 다시 적용', 'renameDeptRowsMenu')
     .addSeparator()
     .addItem('자동 전송 끄기', 'disableAutoSync')
     .addToUi();
@@ -1013,6 +1016,7 @@ function autoSyncDirty() {
   try {
     try { ensureDeptRowsOnce_(); } catch (eDept) { }
     try { migrateMonthTabsOnce_(); } catch (eMig) { }
+    try { renameDeptRowsOnce_(); } catch (eRen) { }
     var sp = PropertiesService.getScriptProperties();
     var keys = sp.getKeys().filter(function (k) { return k.indexOf('dirty_') === 0; });
     var ss = SpreadsheetApp.getActive();
@@ -2089,6 +2093,61 @@ function handleSave_(ss, req) {
 /* 이미 만들어 둔 탭에도 새로 늘어난 부서 줄을 넣어 준다.
    맨 아래 전달사항 줄 바로 위에 끼워 넣고, 서식은 바로 위 줄에서 가져온다. */
 /* 부서 줄 추가는 한 번만 하면 되므로, 했는지 여부를 스크립트 속성에 적어 둔다. */
+/* 부서 이름이 바뀌면 이미 만들어 둔 주간 탭의 줄 이름도 함께 고쳐야 한다.
+   왼쪽이 예전 이름, 오른쪽이 새 이름이다. 앞으로 또 바뀌면 여기에 한 쌍을 더한다. */
+var DEPT_RENAMES = [['교육정보', '연구정보']];
+
+function renameDeptRows_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var changed = [];
+  ss.getSheets().forEach(function (sh) {
+    var type = sheetType_(sh);
+    if (type !== 'week' && type !== 'template') return;
+    var vals = sh.getRange(1, 1, Math.min(60, sh.getMaxRows()), 1).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var label = cellStr(vals[i][0]);
+      if (!label) continue;
+      for (var k = 0; k < DEPT_RENAMES.length; k++) {
+        if (label === DEPT_RENAMES[k][0]) {
+          sh.getRange(i + 1, 1).setValue(DEPT_RENAMES[k][1]);
+          changed.push(sh.getName() + ' / ' + label + ' → ' + DEPT_RENAMES[k][1]);
+          break;
+        }
+      }
+    }
+  });
+  return changed;
+}
+
+/* 같은 이름을 두 번 바꿀 일은 없으므로, 했는지 여부를 스크립트 속성에 적어 둔다. */
+function renameDeptRowsOnce_() {
+  var sp = PropertiesService.getScriptProperties();
+  var key = 'deptRenamed_' + DEPT_RENAMES.map(function (pr) { return pr[0] + '>' + pr[1]; }).join(',');
+  if (sp.getProperty(key)) return;
+  var done = renameDeptRows_();
+  sp.setProperty(key, String(Date.now()));
+  if (!done.length) return;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.getSheets().forEach(function (sh) {
+    var ty = sheetType_(sh);
+    if (ty === 'week' || ty === 'month') sp.setProperty('dirty_' + sh.getSheetId(), String(Date.now()));
+  });
+}
+
+/* 메뉴에서 직접 다시 적용할 때 쓴다. */
+function renameDeptRowsMenu() {
+  var ui = SpreadsheetApp.getUi();
+  var done = renameDeptRows_();
+  if (done.length) {
+    var sp = PropertiesService.getScriptProperties();
+    SpreadsheetApp.getActiveSpreadsheet().getSheets().forEach(function (sh) {
+      var ty = sheetType_(sh);
+      if (ty === 'week' || ty === 'month') sp.setProperty('dirty_' + sh.getSheetId(), String(Date.now()));
+    });
+  }
+  ui.alert(done.length ? '이름을 바꾼 줄: ' + done.join(', ') : '바꿀 줄이 없습니다.');
+}
+
 function ensureDeptRowsOnce_() {
   var sp = PropertiesService.getScriptProperties();
   if (sp.getProperty('deptRowsAdded2')) return;

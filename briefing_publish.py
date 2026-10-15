@@ -200,6 +200,64 @@ def fetch_timetable(neis_cfg, api_key, ymd):
             for r in rows]
 
 
+def fetch_classes(neis_cfg, api_key):
+    """학교에 개설된 학급을 NEIS에서 읽어 온다.
+
+    학급마다 학과가 다르므로(1반 설비시스템과, 2반 스마트전기과) 시간표를 찾을 때
+    학과 이름까지 정확히 맞춰야 한다. 학급이 늘어나면 따로 고치지 않아도 함께 나온다.
+    조회에 실패하면 설정에 적힌 한 학급만 돌려준다.
+    """
+    fallback = [{'grade': int(neis_cfg['grade']), 'class_nm': str(neis_cfg['class_nm']),
+                 'department': neis_cfg['department']}]
+    j = neis_get('classInfo', {
+        'KEY': api_key, 'Type': 'json', 'pIndex': '1', 'pSize': '100',
+        'ATPT_OFCDC_SC_CODE': neis_cfg['atpt_code'],
+        'SD_SCHUL_CODE': neis_cfg['school_code'],
+        'AY': str(neis_cfg['year']),
+    })
+    rows = []
+    if j and 'classInfo' in j:
+        for item in j['classInfo']:
+            if 'row' in item:
+                rows = item['row']
+    classes, seen = [], set()
+    for r in rows:
+        try:
+            grade = int(r.get('GRADE') or 0)
+        except ValueError:
+            continue
+        cls = str(r.get('CLASS_NM') or '').strip()
+        dept = (r.get('DDDEP_NM') or '').strip()
+        if not grade or not cls or (grade, cls) in seen:
+            continue
+        seen.add((grade, cls))
+        classes.append({'grade': grade, 'class_nm': cls, 'department': dept})
+
+    def order(c):
+        n = c['class_nm']
+        return (c['grade'], int(n) if n.isdigit() else 999, n)
+
+    classes.sort(key=order)
+    return classes or fallback
+
+
+def fetch_timetables(neis_cfg, api_key, ymd):
+    """학급마다 오늘 시간표를 모은다. 탭 이름과 머리글 문구도 함께 만든다."""
+    classes = fetch_classes(neis_cfg, api_key)
+    one_grade = len({c['grade'] for c in classes}) == 1
+    out = []
+    for c in classes:
+        cfg = dict(neis_cfg, grade=c['grade'], class_nm=c['class_nm'], department=c['department'])
+        out.append({
+            'key': '%d-%s' % (c['grade'], c['class_nm']),
+            'label': ('%s반' % c['class_nm']) if one_grade else ('%d-%s' % (c['grade'], c['class_nm'])),
+            'department': c['department'],
+            'sub': '%s %d학년 %s반' % (c['department'], c['grade'], c['class_nm']),
+            'rows': fetch_timetable(cfg, api_key, ymd),
+        })
+    return out
+
+
 def fetch_meals(neis_cfg, api_key, ymd):
     j = neis_get('mealServiceDietInfo', {
         'KEY': api_key, 'Type': 'json',
@@ -348,6 +406,11 @@ body{
   background:#fff;color:var(--muted);cursor:pointer;font-family:var(--sans);transition:.14s}
 .mtab:hover{border-color:var(--ink);color:var(--text)}
 .mtab.on{background:var(--ink);border-color:var(--ink);color:#f6f4ef}
+.ttabs{display:inline-flex;gap:4px}
+.ttab{font-size:12.5px;font-weight:600;padding:3px 12px;border-radius:20px;border:1px solid var(--line);
+  background:#fff;color:var(--muted);cursor:pointer;font-family:var(--sans);transition:.14s;line-height:1.5}
+.ttab:hover{border-color:var(--ink);color:var(--text)}
+.ttab.on{background:var(--ink);border-color:var(--ink);color:#f6f4ef}
 .kcal{font-family:var(--mono);font-size:11.5px;color:var(--muted);
   border:1px solid var(--line);border-radius:20px;padding:3px 10px;white-space:nowrap}
 .mpane{display:flex;flex-direction:column;min-height:0}
@@ -407,28 +470,53 @@ def _period_no(t):
         return 99
 
 
-def render_timetable_panel(timetable, dept_label):
+def _timetable_body(timetable):
     if not timetable:
-        body = ('<div class="empty">NEIS에 등록된 오늘 시간표가 없습니다.<br>'
+        return ('<div class="empty">NEIS에 등록된 오늘 시간표가 없습니다.<br>'
                 '학교에서 시간표를 NEIS에 올리면 자동으로 표시됩니다.</div>')
-    else:
-        # 4교시를 마치고 점심을 먹으므로 오전과 오후를 나누어 보여 준다.
-        morning = [t for t in timetable if _period_no(t) <= LUNCH_AFTER_PERIOD]
-        afternoon = [t for t in timetable if _period_no(t) > LUNCH_AFTER_PERIOD]
-        parts = []
-        if morning:
-            parts.append('<div class="periods">' + ''.join(_period_card(t) for t in morning) + '</div>')
-        if morning and afternoon:
-            parts.append('<div class="lunch">점심시간</div>')
-        if afternoon:
-            parts.append('<div class="periods">' + ''.join(_period_card(t) for t in afternoon) + '</div>')
-        body = ''.join(parts)
+    # 4교시를 마치고 점심을 먹으므로 오전과 오후를 나누어 보여 준다.
+    morning = [t for t in timetable if _period_no(t) <= LUNCH_AFTER_PERIOD]
+    afternoon = [t for t in timetable if _period_no(t) > LUNCH_AFTER_PERIOD]
+    parts = []
+    if morning:
+        parts.append('<div class="periods">' + ''.join(_period_card(t) for t in morning) + '</div>')
+    if morning and afternoon:
+        parts.append('<div class="lunch">점심시간</div>')
+    if afternoon:
+        parts.append('<div class="periods">' + ''.join(_period_card(t) for t in afternoon) + '</div>')
+    return ''.join(parts)
+
+
+def render_timetable_panel(timetables, default_key=None):
+    """학급이 둘 이상이면 머리글에 학급 단추를 두고, 고른 학급의 시간표만 보여 준다.
+
+    마지막으로 고른 학급은 PC마다 기억해 두었다가 다음에 열 때 그대로 보여 준다.
+    """
+    if not timetables:
+        timetables = [{'key': '-', 'label': '', 'department': '', 'sub': '', 'rows': []}]
+    keys = [t['key'] for t in timetables]
+    cur = default_key if default_key in keys else keys[0]
+    active = timetables[keys.index(cur)]
+    many = len(timetables) > 1
+
+    tabs = ''
+    if many:
+        tabs = '<span class="ttabs">' + ''.join(
+            '<button type="button" class="ttab%s" data-key="%s" data-sub="%s" data-tag="%d교시">%s</button>'
+            % (' on' if t['key'] == cur else '', html.escape(t['key']),
+               html.escape(t['department'] or t['sub']), len(t['rows']), html.escape(t['label']))
+            for t in timetables) + '</span>'
+    sub = active['department'] if many else active['sub']
+    panes = ''.join(
+        '<div class="ttpane" data-key="%s"%s>%s</div>'
+        % (html.escape(t['key']), '' if t['key'] == cur else ' hidden', _timetable_body(t['rows']))
+        for t in timetables)
     return (
-        '<article class="panel">'
+        '<article class="panel" id="ttPanel">'
         '<div class="panel-head"><h2>오늘의 시간표</h2>'
-        f'<span class="sub">{html.escape(dept_label)}</span><span class="sp"></span>'
-        f'<span class="tag">{len(timetable)}교시</span></div>'
-        f'<div class="panel-body">{body}</div></article>'
+        f'{tabs}<span class="sub" id="ttSub">{html.escape(sub)}</span><span class="sp"></span>'
+        f'<span class="tag" id="ttTag">{len(active["rows"])}교시</span></div>'
+        f'<div class="panel-body">{panes}</div></article>'
     )
 
 
@@ -536,6 +624,43 @@ TAIL_SCRIPT = """
     }
   }
 })();
+</script>
+"""
+
+
+TT_SCRIPT = """
+<script>
+/* 시간표 학급 단추. 새 발행본으로 바꿔 끼운 뒤에도 다시 연결하고,
+   PC마다 마지막으로 고른 학급을 기억해 두었다가 그대로 보여 준다. */
+window.bindTimetableTabs=function(){
+  var p=document.getElementById('ttPanel');
+  if(!p)return;
+  var tabs=p.querySelectorAll('.ttab'), panes=p.querySelectorAll('.ttpane');
+  if(!tabs.length)return;
+  var sub=document.getElementById('ttSub'), tag=document.getElementById('ttTag');
+  function show(i,save){
+    var key=tabs[i].getAttribute('data-key');
+    for(var k=0;k<tabs.length;k++){tabs[k].className='ttab'+(k===i?' on':'');}
+    for(var k=0;k<panes.length;k++){
+      if(panes[k].getAttribute('data-key')===key){panes[k].removeAttribute('hidden');}
+      else{panes[k].setAttribute('hidden','');}
+    }
+    if(sub)sub.textContent=tabs[i].getAttribute('data-sub')||'';
+    if(tag)tag.textContent=tabs[i].getAttribute('data-tag')||'';
+    if(save){try{localStorage.setItem('jneTtClass',key);}catch(e){}}
+  }
+  for(var k=0;k<tabs.length;k++){
+    (function(i){tabs[i].onclick=function(){show(i,true);};})(k);
+  }
+  var want=null;
+  try{want=localStorage.getItem('jneTtClass');}catch(e){}
+  if(want){
+    for(var k=0;k<tabs.length;k++){
+      if(tabs[k].getAttribute('data-key')===want){show(k,false);break;}
+    }
+  }
+};
+window.bindTimetableTabs();
 </script>
 """
 
@@ -693,6 +818,7 @@ def build_auto_refresh(url, stamp):
         '    }\n'
         '    if(doc.title&&document.title!==doc.title)document.title=doc.title;\n'
         '    if(touched&&window.bindMealTabs)window.bindMealTabs();\n'
+        '    if(touched&&window.bindTimetableTabs)window.bindTimetableTabs();\n'
         '  }\n'
         '  function check(){\n'
         '    if(!window.fetch||!window.DOMParser||document.hidden||busy())return;\n'
@@ -713,14 +839,14 @@ def build_auto_refresh(url, stamp):
     )
 
 
-def render_html(today, sections, timetable, meals, school, school_year, dept_label, generated_at,
+def render_html(today, sections, timetables, meals, school, school_year, default_class, generated_at,
                 workplan_html=''):
     # 오늘·내일·다음 주 일정은 주간 업무 계획의 '주요일정' 행에 그대로 실리므로
     # 중복을 없애고, 앞으로의 주요 일정 목록만 보조 영역에 남긴다.
     sec_o = sections[3]
     dow = WEEKDAY_KR[today.weekday()]
     date_str = today.strftime('%Y. %m. %d.')
-    aux = (render_timetable_panel(timetable, dept_label)
+    aux = (render_timetable_panel(timetables, default_class)
            + render_meal_panel(meals)
            + render_month_panel(sec_o))
     return f'''<!DOCTYPE html>
@@ -753,6 +879,7 @@ def render_html(today, sections, timetable, meals, school, school_year, dept_lab
   <footer>갱신 {html.escape(generated_at)} KST · 노션 학사일정 + NEIS Open API</footer>
 </div>
 {MEAL_SCRIPT}
+{TT_SCRIPT}
 {build_auto_refresh(self_refresh_url(), generated_at)}
 {TAIL_SCRIPT}
 </body></html>'''
@@ -811,22 +938,22 @@ def main():
           f'다음주 {len(sections[2])} / 다가오는주요 {len(sections[3])}')
 
     ymd_today = today.strftime('%Y%m%d')
-    timetable = fetch_timetable(neis_cfg, neis_api_key, ymd_today)
+    timetables = fetch_timetables(neis_cfg, neis_api_key, ymd_today)
+    default_class = '%d-%s' % (int(neis_cfg['grade']), neis_cfg['class_nm'])
+    timetable = next((t['rows'] for t in timetables if t['key'] == default_class),
+                     timetables[0]['rows'] if timetables else [])
     meals = fetch_meals(neis_cfg, neis_api_key, ymd_today)
-    print(f'  NEIS 시간표 {len(timetable)}교시 / 급식 {len(meals)}끼')
+    tt_note = ', '.join('%s %d교시' % (t['label'] or t['sub'], len(t['rows'])) for t in timetables)
+    print(f'  NEIS 시간표 {tt_note} / 급식 {len(meals)}끼')
 
     generated_at = now_kst.isoformat(timespec='seconds')
     school = neis_cfg.get('school_name', '전남미래국제고등학교')
     school_year = f'{neis_cfg["year"]}학년도'
-    dept_label = (
-        f'{neis_cfg["department"]} '
-        f'{neis_cfg["grade"]}학년 {neis_cfg["class_nm"]}반'
-    )
     workplan_html = build_workplan_section()
 
     html_str = render_html(
-        today, sections, timetable, meals,
-        school, school_year, dept_label, generated_at,
+        today, sections, timetables, meals,
+        school, school_year, default_class, generated_at,
         workplan_html=workplan_html,
     )
 
@@ -839,6 +966,8 @@ def main():
         'department': neis_cfg['department'],
         'events': events,
         'timetable': timetable,
+        'timetables': [{'class': t['key'], 'label': t['sub'], 'periods': t['rows']}
+                       for t in timetables],
         'meals': meals,
     }
     json_str = json.dumps(json_payload, ensure_ascii=False, indent=2)
